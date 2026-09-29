@@ -24790,6 +24790,7 @@ HitboxOptions.__index = HitboxOptions
 
 -- Services.
 local players = game:GetService("Players")
+local Configuration = require("Utility/Configuration")
 
 ---Hit color.
 ---@return Color3
@@ -24840,7 +24841,9 @@ HitboxOptions.ucache = LPH_NO_VIRTUALIZE(function(self)
 	if not hitbox then
 		self.cache = Vector3.new(0, 0, 0)
 	else
-		self.cache = Vector3.new(hitbox.X, hitbox.Y, hitbox.Z)
+		local scalePercent = Configuration.expectOptionValue("AutoDefenseHitboxScale") or 100
+		local scale = math.max(0.05, scalePercent / 100)
+		self.cache = Vector3.new(hitbox.X, hitbox.Y, hitbox.Z) * scale
 	end
 end)
 
@@ -75536,6 +75539,92 @@ Defender.SimulateInput = LPH_NO_VIRTUALIZE(function(self, timing, action)
 	end
 end)
 
+---Record a parried animation to "rain timings.txt" (executor workspace folder) when enabled.
+---@param self Defender
+---@param timing Timing
+local parriedSeen, parriedLines, parriedLoaded = {}, {}, false
+local PARRIED_FILE = "rain timings.txt"
+
+local function showParriedAttack(self, timing)
+	if not Configuration.expectToggleValue("ShowParriedAttack") then
+		return
+	end
+
+	if self.__type ~= "Animation" or not timing then
+		return
+	end
+
+	local aid = tostring(timing._id or "")
+	if aid == "" and self.track and self.track.Animation then
+		aid = tostring(self.track.Animation.AnimationId or "")
+	end
+
+	if aid == "" then
+		return
+	end
+
+	local ok, AnimationVisualizer = pcall(require, "Features/Game/AnimationVisualizer")
+	if ok and type(AnimationVisualizer) == "table" and AnimationVisualizer.showParry then
+		AnimationVisualizer.showParry(self.entity, aid, timing)
+	end
+end
+
+local function recordParriedAnimation(self, timing)
+	if not Configuration.expectToggleValue("SaveParriedAnimations") then
+		return
+	end
+
+	if self.__type ~= "Animation" or not timing then
+		return
+	end
+
+	if not writefile or not isfile or not readfile then
+		return
+	end
+
+	-- Resolve the animation id. Timing ids are already decoded at load time.
+	local aid = tostring(timing._id or "")
+	if aid == "" and self.track and self.track.Animation then
+		aid = tostring(self.track.Animation.AnimationId or "")
+	end
+
+	if aid == "" or parriedSeen[aid] then
+		return
+	end
+
+	-- Keep entries from earlier sessions.
+	if not parriedLoaded then
+		parriedLoaded = true
+
+		local ok, contents = pcall(function()
+			return isfile(PARRIED_FILE) and readfile(PARRIED_FILE) or ""
+		end)
+
+		if ok and contents ~= "" then
+			for line in string.gmatch(contents, "[^\r\n]+") do
+				parriedLines[#parriedLines + 1] = line
+
+				local existing = string.match(line, "(rbxassetid://%d+)")
+				if existing then
+					parriedSeen[existing] = true
+				end
+			end
+		end
+
+		if parriedSeen[aid] then
+			return
+		end
+	end
+
+	parriedSeen[aid] = true
+
+	local entity = self.entity and self.entity.Name or "Unknown"
+	parriedLines[#parriedLines + 1] =
+		string.format("%s | name: %s | entity: %s | tag: %s", aid, tostring(timing.name), entity, tostring(timing.tag))
+
+	pcall(writefile, PARRIED_FILE, table.concat(parriedLines, "\n"))
+end
+
 ---Handle parry.
 ---@param self Defender
 ---@param timing Timing
@@ -75624,6 +75713,8 @@ Defender.parry = LPH_NO_VIRTUALIZE(function(self, timing, action)
 			end
 
 			self:SimulateInput(timing, { _type = "Parry" })
+			pcall(recordParriedAnimation, self, timing)
+			pcall(showParriedAttack, self, timing)
 			return QueuedBlocking.invoke(QueuedBlocking.BLOCK_TYPE_DEFLECT, "Defender_Deflect", nil)
 		end
 
@@ -77164,7 +77255,7 @@ PartDefender.update = LPH_NO_VIRTUALIZE(function(self)
 		return
 	end
 
-	local hb = self.timing.hitbox
+	local hb = HitboxOptions.new(self.part, self.timing):hitbox()
 
 	-- Get current hitbox state.
 	---@note: If we're using PartDefender, why perserve rotation? It's likely wrong or gonna mess us up.
@@ -84065,6 +84156,141 @@ return LPH_NO_VIRTUALIZE(function()
 		return (1 - ((value - min) / (max - min))) * minSize + ((value - min) / (max - min)) * maxSize
 	end
 
+	-- Timing info overlay (attack name + action timings).
+	local timingInfo = Instance.new("TextLabel")
+	timingInfo.Name = "TimingInfo"
+	timingInfo.FontFace = Font.new("rbxasset://fonts/families/RobotoMono.json")
+	timingInfo.TextColor3 = Library.FontColor
+	timingInfo.Text = ""
+	timingInfo.BackgroundTransparency = 1
+	timingInfo.BorderSizePixel = 0
+	timingInfo.TextSize = 11
+	timingInfo.TextXAlignment = Enum.TextXAlignment.Left
+	timingInfo.TextYAlignment = Enum.TextYAlignment.Top
+	timingInfo.Position = UDim2.new(0, 8, 0, 28)
+	timingInfo.Size = UDim2.new(1, -16, 0, 100)
+	timingInfo.ZIndex = 30
+	timingInfo.Parent = inner
+
+	---Build the timing info text for a timing.
+	---@param aid string
+	---@param timing table?
+	---@return string
+	local function buildTimingText(aid, timing)
+		if not timing then
+			return aid
+		end
+
+		local lines = {
+			string.format("%s [%s]", tostring(timing.name), tostring(timing.tag or "?")),
+			aid,
+		}
+
+		local ok, stack = pcall(function()
+			return timing.actions and timing.actions:stack() or {}
+		end)
+
+		if ok and #stack > 0 then
+			for _, action in next, stack do
+				lines[#lines + 1] = string.format(
+					"%s: %ims",
+					tostring(action._type or action.name or "?"),
+					math.round(tonumber(action._when) or 0)
+				)
+			end
+		else
+			lines[#lines + 1] = "No actions"
+		end
+
+		if timing.hitbox then
+			lines[#lines + 1] = string.format("Hitbox: %.0f, %.0f, %.0f", timing.hitbox.X, timing.hitbox.Y, timing.hitbox.Z)
+		end
+
+		return table.concat(lines, "\n")
+	end
+
+	---Load an animation onto a clone of an entity.
+	---@param sourceEntity Model
+	---@param aid string
+	---@param playbackData PlaybackData?
+	---@param timing table?
+	local function loadAnimation(sourceEntity, aid, playbackData, timing)
+		-- Empty out previous data.
+		currentTrack = nil
+		currentPlaybackData = nil
+		isPaused = false
+
+		animationTextbox.Text = aid
+		timingInfo.Text = buildTimingText(aid, timing)
+
+		if not sourceEntity or not sourceEntity.Parent then
+			return AnimationVisualizer.message("Entity Unloaded")
+		end
+
+		-- Remove all previously loaded models.
+		for _, descendant in next, viewportFrame:GetDescendants() do
+			if descendant.ClassName ~= "Model" then
+				continue
+			end
+
+			descendant:Destroy()
+		end
+
+		-- Load the model & center it.
+		sourceEntity.Archivable = true
+		local entity = sourceEntity:Clone()
+		if not entity then
+			return AnimationVisualizer.message("Could Not Clone Entity")
+		end
+
+		entity.Parent = worldModel
+		entity:PivotTo(CFrame.new(0, 0, 0))
+
+		-- Fetch the primary part. If it does not exist, then the entity has been unloaded.
+		if not entity.PrimaryPart then
+			return AnimationVisualizer.message("No Primary Part Found")
+		end
+
+		-- Setup camera.
+		local _, bbs = entity:GetBoundingBox()
+		camera.CFrame =
+			CFrame.lookAt(entity.PrimaryPart.Position - Vector3.new(0, 0, bbs.Magnitude), entity.PrimaryPart.Position)
+
+		-- Fetch animator.
+		local animator = entity:FindFirstChildWhichIsA("Animator", true)
+		if not animator then
+			return AnimationVisualizer.message("No Animator Found")
+		end
+
+		-- Stop previous animations.
+		for _, track in next, animator:GetPlayingAnimationTracks() do
+			track:Stop()
+		end
+
+		-- Create animation.
+		local animation = Instance.new("Animation")
+		animation.AnimationId = aid
+
+		-- Store current data for playback (nil means plain speed 1 playback).
+		currentPlaybackData = playbackData
+		currentTrack = animator:LoadAnimation(animation)
+
+		-- Play animation. With recorded playback data we hold it at zero speed and drive it ourselves.
+		currentTrack:Play(0.0, 100, playbackData and 0.0 or 1.0)
+		currentTrack.Priority = Enum.AnimationPriority.Action
+		currentTrack.Looped = true
+		visualizerMaid:mark(currentTrack.DidLoop:Connect(function()
+			timeElapsed = 0.0
+		end))
+
+		-- Reset time elapsed.
+		timeElapsed = 0.0
+
+		-- Show frames.
+		viewportFrame.Visible = true
+		noViewportFrame.Visible = false
+	end
+
 	---On Animation ID focus lost.
 	---@param enter boolean
 	---@param _ InputObject
@@ -84076,6 +84302,7 @@ return LPH_NO_VIRTUALIZE(function()
 		-- Empty out previous data.
 		currentTrack = nil
 		currentPlaybackData = nil
+		timingInfo.Text = ""
 
 		---@type PlaybackData
 		local playbackData = Defense.agpd(animationTextbox.Text)
@@ -84203,7 +84430,9 @@ return LPH_NO_VIRTUALIZE(function()
 		local hs = currentTrack and mapSliderValue(currentTrack.TimePosition, 0.0, currentTrack.Length, 0, mhs) or 0.0
 
 		-- Update slider text.
-		sliderText.Text = (currentTrack and currentPlaybackData)
+		sliderText.Text = (currentTrack and not currentPlaybackData)
+				and string.format("%.3f/%.3f (%ims)", currentTrack.TimePosition, currentTrack.Length, math.round(currentTrack.TimePosition * 1000))
+			or (currentTrack and currentPlaybackData)
 				and string.format(
 					"%.3f/%.3f (%ims)",
 					currentTrack.TimePosition,
@@ -84220,7 +84449,7 @@ return LPH_NO_VIRTUALIZE(function()
 		-- Update speed amount.
 		speedText.Text = currentTrack and string.format("Speed (%.2f)", currentTrack.Speed) or "Speed (???)"
 
-		if currentTrack and isPaused then
+		if currentTrack and currentPlaybackData and isPaused then
 			speedText.Text = string.format(
 				"Speed (%.2f)",
 				currentPlaybackData:last(getTimeElapsedFromTp(currentTrack.TimePosition, currentTrack.Length) or 0.0)
@@ -84228,12 +84457,17 @@ return LPH_NO_VIRTUALIZE(function()
 			)
 		end
 
-		if not currentTrack or not currentPlaybackData then
+		if not currentTrack then
 			return
 		end
 
 		if isPaused then
 			return currentTrack:AdjustSpeed(0.0)
+		end
+
+		-- No recorded playback data: play at normal speed.
+		if not currentPlaybackData then
+			return currentTrack:AdjustSpeed(1.0)
 		end
 
 		timeElapsed = timeElapsed + delta
@@ -84333,6 +84567,21 @@ return LPH_NO_VIRTUALIZE(function()
 	---@param state boolean
 	function AnimationVisualizer.visible(state)
 		screenGui.Enabled = state
+	end
+
+	---Show an attack that was just parried, with its timings.
+	---@param entity Model
+	---@param aid string
+	---@param timing table
+	function AnimationVisualizer.showParry(entity, aid, timing)
+		screenGui.Enabled = true
+
+		local playbackData = Defense.agpd(aid)
+		local ok, err = pcall(loadAnimation, entity, aid, playbackData, timing)
+		if not ok then
+			AnimationVisualizer.message("Visualizer Error")
+			timingInfo.Text = buildTimingText(aid, timing)
+		end
 	end
 
 	---Show a message.
@@ -92743,6 +92992,9 @@ local Library = require("GUI/Library")
 ---@module Menu.CombatTab
 local CombatTab = require("Menu/CombatTab")
 
+---@module Menu.TimingBuilderTab
+local TimingBuilderTab = require("Menu/TimingBuilderTab")
+
 ---@module Menu.GameTab
 local GameTab = require("Menu/GameTab")
 
@@ -92824,6 +93076,7 @@ function Menu.init()
 
 	-- Initialize all tabs. Don't initialize them if we have the 'exploit_tester' role.
 	CombatTab.init(window)
+	TimingBuilderTab.init(window)
 
 	GameTab.init(window)
 	VisualsTab.init(window)
@@ -92975,6 +93228,64 @@ end
 
 -- Return Menu module.
 return Menu
+
+end)
+__bundle_register("Menu/TimingBuilderTab", function(require, _LOADED, __bundle_register, __bundle_modules)
+-- TimingBuilderTab module.
+local TimingBuilderTab = {}
+
+---@module GUI.Icons
+local Icons = require("GUI/Icons")
+
+---@module Utility.Logger
+local Logger = require("Utility/Logger")
+
+---Initialize Timing Builder section.
+---@param groupbox table
+function TimingBuilderTab.initBuilderSection(groupbox)
+	local visualizerOpen = false
+
+	groupbox:AddToggle("SaveParriedAnimations", {
+		Text = "Save Parried Animations",
+		Tooltip = "Saves each animation auto defense parries to 'rain timings.txt' in your executor's workspace folder.",
+		Default = false,
+	})
+
+	groupbox:AddToggle("ShowParriedAttack", {
+		Text = "Show Parried Attack",
+		Tooltip = "Opens the animation visualizer and shows the attack and its timings whenever auto defense parries.",
+		Default = false,
+	})
+
+	groupbox:AddToggle("ShowAnimationVisualizer", {
+		Text = "Record Animation Playback",
+		Tooltip = "Records animation playback data so it can be viewed in the animation visualizer.",
+		Default = false,
+	})
+
+	groupbox:AddButton("Toggle Animation Visualizer", function()
+		local ok, AnimationVisualizer = pcall(require, "Features/Game/AnimationVisualizer")
+		if not ok or type(AnimationVisualizer) ~= "table" or not AnimationVisualizer.visible then
+			return Logger.notify("Timing Builder is not available.")
+		end
+
+		visualizerOpen = not visualizerOpen
+		AnimationVisualizer.visible(visualizerOpen)
+	end)
+end
+
+---Initialize tab.
+---@param window table
+function TimingBuilderTab.init(window)
+	-- Create tab.
+	local tab = window:AddTab("Timing Builder", "Combat", Icons.Builder)
+
+	-- Initialize sections.
+	TimingBuilderTab.initBuilderSection(tab:AddLeftGroupbox("Timing Builder"))
+end
+
+-- Return TimingBuilderTab module.
+return TimingBuilderTab
 
 end)
 __bundle_register("Menu/LycorisTab", function(require, _LOADED, __bundle_register, __bundle_modules)
@@ -97602,6 +97913,16 @@ function CombatTab.initAutoDefenseSection(groupbox)
 	)
 
 	local autoDefenseDepBox = groupbox:AddDependencyBox()
+
+	autoDefenseDepBox:AddSlider("AutoDefenseHitboxScale", {
+		Text = "Auto Defense Hitbox Size",
+		Default = 100,
+		Min = 25,
+		Max = 200,
+		Suffix = "%",
+		Rounding = 0,
+		Tooltip = "Adjust auto-defense hitboxes. 25% = smaller, 100% = normal, 200% = bigger.",
+	})
 
 	autoDefenseDepBox:AddToggle("EnableNotifications", {
 		Text = "Enable Notifications",
