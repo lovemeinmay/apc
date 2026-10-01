@@ -26589,6 +26589,12 @@ function SaveManager.load(name)
 
 	SaveManager.llc = config:clone()
 	SaveManager.llcn = name
+
+	-- Config loads clear the timing list, so re-apply timings from the "rain timings" folder.
+	local okTb, TimingBuilder = pcall(require, "Features/Game/TimingBuilder")
+	if okTb and type(TimingBuilder) == "table" and TimingBuilder.loadSaved then
+		pcall(TimingBuilder.loadSaved)
+	end
 end
 
 ---Auto-save timings.
@@ -80264,6 +80270,14 @@ AnimatorDefender.process = LPH_NO_VIRTUALIZE(function(self, track)
 	-- can't erase it; for the normal path it's the same canonical value as before.
 	local aid = self:_apResolveAid(track)
 
+	-- Feed the Timing Builder's animation list with the id captured at the play instant.
+	do
+		local okTb, TimingBuilder = pcall(require, "Features/Game/TimingBuilder")
+		if okTb and type(TimingBuilder) == "table" and TimingBuilder.feed then
+			pcall(TimingBuilder.feed, self.entity, aid)
+		end
+	end
+
 	-- Anti-breaker: for player attackers, route through the crasher-protection ingress gate
 	-- and the authenticator flow while the toggle is on. NPCs and the disabled state fall
 	-- straight through to the normal path.
@@ -82455,6 +82469,11 @@ function Features.detach()
 	-- Only detach if we're a builder.
 	if not armorshield or armorshield.current_role == "builder" then
 		AnimationVisualizer.detach()
+	end
+
+	local okTimingBuilder, TimingBuilder = pcall(require, "Features/Game/TimingBuilder")
+	if okTimingBuilder and type(TimingBuilder) == "table" and TimingBuilder.detach then
+		TimingBuilder.detach()
 	end
 
 	Teleport.detach()
@@ -93230,6 +93249,1709 @@ end
 return Menu
 
 end)
+__bundle_register("Features/Game/TimingBuilder", function(require, _LOADED, __bundle_register, __bundle_modules)
+return LPH_NO_VIRTUALIZE(function()
+	-- Timing Builder window: preview animations, place actions, edit flags and save timings.
+	local TimingBuilder = {}
+
+	---@module GUI.Library
+	local Library = require("GUI/Library")
+
+	---@module Utility.CoreGuiManager
+	local CoreGuiManager = require("Utility/CoreGuiManager")
+
+	---@module Utility.Logger
+	local Logger = require("Utility/Logger")
+
+	---@module Game.Timings.SaveManager
+	local SaveManager = require("Game/Timings/SaveManager")
+
+	---@module Game.Timings.AnimationTiming
+	local AnimationTiming = require("Game/Timings/AnimationTiming")
+
+	---@module Game.Timings.Action
+	local Action = require("Game/Timings/Action")
+
+	-- Services.
+	local players = game:GetService("Players")
+	local runService = game:GetService("RunService")
+	local userInputService = game:GetService("UserInputService")
+	local httpService = game:GetService("HttpService")
+
+	-- Constants.
+	local FONT = Font.new("rbxasset://fonts/families/RobotoMono.json")
+	local FONT_BOLD = Font.new("rbxasset://fonts/families/RobotoMono.json", Enum.FontWeight.Bold)
+	local SCRUB_WIDTH = 396
+
+	local ACTION_TYPES = { "Parry", "Dodge", "Forced Full Dodge", "Start Block", "End Block", "Jump", "Teleport Up" }
+	local TAGS = { "Undefined", "M1", "Mantra", "Critical" }
+	local SPEEDS = { 0.25, 0.5, 1, 2 }
+	local MODES = { "Pause", "Mine", "Self", "Watch" }
+
+	local TYPE_COLORS = {
+		["Parry"] = Color3.fromRGB(110, 160, 255),
+		["Dodge"] = Color3.fromRGB(255, 200, 70),
+		["Forced Full Dodge"] = Color3.fromRGB(255, 150, 60),
+		["Start Block"] = Color3.fromRGB(110, 230, 130),
+		["End Block"] = Color3.fromRGB(255, 110, 110),
+		["Jump"] = Color3.fromRGB(190, 120, 255),
+		["Teleport Up"] = Color3.fromRGB(150, 220, 255),
+	}
+
+	local ADD_BUTTONS = {
+		{ "+ Parry", "Parry" },
+		{ "+ Dodge", "Dodge" },
+		{ "+ Block", "Start Block" },
+		{ "+ Unblock", "End Block" },
+		{ "+ Jump", "Jump" },
+	}
+
+	-- Flag definitions. 'invert' means the button is ON when the stored field is false.
+	local FLAGS = {
+		{ "Dash Fallback", "ndfb", true },
+		{ "Block Fallback", "nbfb", true },
+		{ "Vent Fallback", "nvfb", true },
+		{ "Repeat Parry", "rpue", false },
+		{ "Ignore Block Gate", "ibi", false },
+		{ "Ignore AP Frames", "iapf", false },
+		{ "Feint Inhale", "uif", false },
+		{ "Allow Attack", "aatk", false },
+		{ "Face Hitbox", "fhb", false },
+		{ "Delay In Hitbox", "duih", false },
+		{ "Silent", "smn", false },
+		{ "Ignore End", "iae", false },
+	}
+
+	-- State.
+	local state = {
+		mode = "Watch",
+		collectMode = "Watch",
+		seen = {},
+		order = {},
+		aid = nil,
+		entity = nil,
+		timing = nil,
+		sel = nil,
+		paused = false,
+		speed = 1,
+		track = nil,
+		lastLen = -1,
+		yaw = math.pi,
+		pitch = 0.15,
+		dist = 10,
+		center = Vector3.new(0, 3, 0),
+		dragMarker = nil,
+		dragScrub = false,
+		dragView = false,
+		dragWindow = false,
+		listDirty = true,
+		lastPoll = 0,
+		lastList = 0,
+	}
+
+	-- UI references.
+	local gui, window, viewport, worldModel, camera, previewMessage
+	local listFrame, listEmpty, actionsFrame, actionsLabel, scrub, playhead, lengthLabel
+	local timeBox, animLabel, playButton, speedButton, idBox, nameBox, typeButton, hintLabel
+	local edFrame, edHint, edType, edWhen, edHX, edHY, edHZ, edIhbc
+	local tHX, tHY, tHZ
+	local modeButtons, flagButtons = {}, {}
+	local connections = {}
+
+	---Create an instance with properties.
+	---@param class string
+	---@param props table
+	---@param parent Instance?
+	---@return Instance
+	local function mk(class, props, parent)
+		local object = Instance.new(class)
+
+		for key, value in next, props do
+			object[key] = value
+		end
+
+		object.Parent = parent
+
+		return object
+	end
+
+	---Create a text label.
+	local function label(parent, text, x, y, w, h, size, align)
+		return mk("TextLabel", {
+			BackgroundTransparency = 1,
+			BorderSizePixel = 0,
+			Text = text,
+			FontFace = FONT,
+			TextSize = size or 12,
+			TextColor3 = Library.FontColor,
+			TextXAlignment = align or Enum.TextXAlignment.Left,
+			Position = UDim2.fromOffset(x, y),
+			Size = UDim2.fromOffset(w, h),
+		}, parent)
+	end
+
+	---Create a button.
+	local function button(parent, text, x, y, w, h, callback)
+		local object = mk("TextButton", {
+			AutoButtonColor = false,
+			BackgroundColor3 = Library.MainColor,
+			BorderColor3 = Library.OutlineColor,
+			FontFace = FONT,
+			Text = text,
+			TextSize = 12,
+			TextColor3 = Library.FontColor,
+			Position = UDim2.fromOffset(x, y),
+			Size = UDim2.fromOffset(w, h),
+		}, parent)
+
+		if callback then
+			object.MouseButton1Click:Connect(callback)
+		end
+
+		return object
+	end
+
+	---Create a textbox.
+	local function textbox(parent, placeholder, text, x, y, w, h)
+		return mk("TextBox", {
+			BackgroundColor3 = Library.MainColor,
+			BorderColor3 = Library.OutlineColor,
+			FontFace = FONT,
+			Text = text or "",
+			PlaceholderText = placeholder or "",
+			PlaceholderColor3 = Color3.fromRGB(120, 130, 140),
+			TextSize = 12,
+			TextColor3 = Library.FontColor,
+			ClearTextOnFocus = false,
+			Position = UDim2.fromOffset(x, y),
+			Size = UDim2.fromOffset(w, h),
+		}, parent)
+	end
+
+	---Set a button's on/off look.
+	local function setOn(object, on)
+		object.BackgroundColor3 = on and Library.MainColor:Lerp(Library.AccentColor, 0.45) or Library.MainColor
+		object.TextTransparency = on and 0 or 0.35
+	end
+
+	---Get the selected action.
+	---@return Action?
+	local function selectedAction()
+		return state.sel
+	end
+
+	---Sort actions by time.
+	local function sortActions()
+		if not state.timing then
+			return
+		end
+
+		table.sort(state.timing.actions:stack(), function(a, b)
+			return a._when < b._when
+		end)
+	end
+
+	-- Forward declarations.
+	local refreshAll, layoutMarkers, rebuildActions, syncEditor, rebuildList
+
+	---Clear the preview.
+	local function clearPreview()
+		if state.track then
+			pcall(function()
+				state.track:Stop(0)
+			end)
+		end
+
+		state.track = nil
+		state.lastLen = -1
+
+		if worldModel then
+			for _, child in next, worldModel:GetChildren() do
+				child:Destroy()
+			end
+		end
+	end
+
+	---Show a message in the preview.
+	---@param text string
+	local function setPreviewMessage(text)
+		previewMessage.Text = text
+		previewMessage.Visible = text ~= ""
+	end
+
+	---Update orbit camera.
+	local function updateCamera()
+		camera.CFrame = CFrame.new(state.center)
+			* CFrame.Angles(0, state.yaw, 0)
+			* CFrame.Angles(-state.pitch, 0, 0)
+			* CFrame.new(0, 0, state.dist)
+	end
+
+	---Load preview for an animation.
+	---@param aid string
+	---@param entity Model?
+	local function loadPreview(aid, entity)
+		clearPreview()
+
+		local source = entity
+		if not source or not source.Parent then
+			source = players.LocalPlayer and players.LocalPlayer.Character
+		end
+
+		if not source then
+			return setPreviewMessage("No entity to preview on.")
+		end
+
+		source.Archivable = true
+
+		local ok, clone = pcall(function()
+			return source:Clone()
+		end)
+
+		if not ok or not clone then
+			return setPreviewMessage("Could not clone entity.")
+		end
+
+		clone.Parent = worldModel
+		pcall(function()
+			clone:PivotTo(CFrame.new(0, 0, 0))
+		end)
+
+		if not clone.PrimaryPart then
+			local root = clone:FindFirstChild("HumanoidRootPart")
+			if root then
+				clone.PrimaryPart = root
+			end
+		end
+
+		if not clone.PrimaryPart then
+			return setPreviewMessage("No primary part found.")
+		end
+
+		local boxCf, boxSize = clone:GetBoundingBox()
+		state.center = boxCf.Position
+		state.dist = math.max(boxSize.Magnitude * 0.9, 6)
+
+		local animator = clone:FindFirstChildWhichIsA("Animator", true)
+		if not animator then
+			return setPreviewMessage("No animator found.")
+		end
+
+		for _, playing in next, animator:GetPlayingAnimationTracks() do
+			playing:Stop(0)
+		end
+
+		local animation = Instance.new("Animation")
+		animation.AnimationId = aid
+
+		local track = animator:LoadAnimation(animation)
+		track.Priority = Enum.AnimationPriority.Action
+		track.Looped = true
+		track:Play(0, 100, state.speed)
+
+		state.track = track
+		state.paused = false
+		state.lastLen = -1
+
+		setPreviewMessage("")
+		updateCamera()
+	end
+
+	---Load (or create) the working timing for an animation.
+	---@param aid string
+	local function loadTimingFor(aid)
+		local existing = SaveManager.as and SaveManager.as:index(aid)
+
+		if existing then
+			state.timing = existing:clone()
+		else
+			state.timing = AnimationTiming.new()
+			state.timing._id = aid
+			state.timing.name = ""
+		end
+
+		state.sel = nil
+		sortActions()
+	end
+
+	---Select an animation.
+	---@param aid string
+	---@param entity Model?
+	local function selectAnimation(aid, entity)
+		state.aid = aid
+		state.entity = entity
+
+		loadTimingFor(aid)
+		loadPreview(aid, entity)
+
+		hintLabel.Text = "Editing " .. aid
+		idBox.Text = aid
+
+		refreshAll()
+	end
+
+	---Canonicalize an animation id to rbxassetid://digits when possible.
+	---@param raw any
+	---@return string
+	local function canonical(raw)
+		local text = tostring(raw or "")
+		local digits = string.match(text, "^rbxassetid://(%d+)$")
+
+		if digits then
+			return "rbxassetid://" .. digits
+		end
+
+		if text ~= "" and string.match(text, "^%d+$") then
+			return "rbxassetid://" .. text
+		end
+
+		return text
+	end
+
+	---Record a seen animation.
+	---@param entity Model?
+	---@param aid string
+	---@param isSelf boolean?
+	local function record(entity, aid, isSelf)
+		if state.mode == "Pause" then
+			return
+		end
+
+		aid = canonical(aid)
+
+		if aid == "" or aid == "rbxassetid://0" then
+			return
+		end
+
+		local entry = state.seen[aid]
+		if not entry then
+			entry = { count = 0 }
+			state.seen[aid] = entry
+
+			table.insert(state.order, 1, aid)
+
+			if #state.order > 150 then
+				local dropped = table.remove(state.order)
+				state.seen[dropped] = nil
+			end
+		end
+
+		entry.count = entry.count + 1
+		entry.entity = entity or entry.entity
+		entry.name = entity and entity.Name or entry.name
+		entry.isSelf = isSelf == true
+
+		state.listDirty = true
+	end
+
+	---Called by auto defense when an animation starts on a tracked entity.
+	---@param entity Model
+	---@param aid string
+	function TimingBuilder.feed(entity, aid)
+		local localPlayer = players.LocalPlayer
+		record(entity, aid, localPlayer and entity == localPlayer.Character)
+	end
+
+	---Format an animation id from user text.
+	---@param text string
+	---@return string?
+	local function normalizeId(text)
+		text = string.gsub(text or "", "%s", "")
+
+		if text == "" then
+			return nil
+		end
+
+		if string.match(text, "^%d+$") then
+			return "rbxassetid://" .. text
+		end
+
+		local digits = string.match(text, "(%d+)$")
+		if digits then
+			return "rbxassetid://" .. digits
+		end
+
+		return nil
+	end
+
+	-- Executor workspace folder for saved timings.
+	local FOLDER = "rain timings"
+
+	---Can we use the executor file functions?
+	---@return boolean
+	local function filesAvailable()
+		return writefile ~= nil and readfile ~= nil and isfolder ~= nil and makefolder ~= nil
+	end
+
+	---Make sure the rain timings folder exists.
+	---@return boolean
+	local function ensureFolder()
+		if not filesAvailable() then
+			return false
+		end
+
+		local ok = pcall(function()
+			if not isfolder(FOLDER) then
+				makefolder(FOLDER)
+			end
+		end)
+
+		return ok
+	end
+
+	-- Tracks which file belongs to which animation id (and the reverse).
+	local fileOf, ownerOf = {}, {}
+
+	---Make a timing name safe to use as a file name.
+	---@param name string
+	---@return string
+	local function safeName(name)
+		local cleaned = string.gsub(tostring(name or ""), '[\\/:*?"<>|%c]', "_")
+		cleaned = string.gsub(cleaned, "^%s+", "")
+		cleaned = string.gsub(cleaned, "%s+$", "")
+
+		return string.sub(cleaned, 1, 60)
+	end
+
+	---File path for a timing, named after the timing.
+	---@param timing AnimationTiming
+	---@return string
+	local function pathFor(timing)
+		local digits = string.match(tostring(timing._id), "(%d+)$") or "unknown"
+		local base = safeName(timing.name)
+
+		if base == "" then
+			base = digits
+		end
+
+		local path = string.format("%s/%s.json", FOLDER, base)
+
+		-- Another animation already owns this file name: disambiguate with the id.
+		if ownerOf[path] and ownerOf[path] ~= timing._id then
+			path = string.format("%s/%s %s.json", FOLDER, base, digits)
+		end
+
+		return path
+	end
+
+	---Delete a timing file.
+	---@param path string
+	local function deleteFile(path)
+		if not (isfile and delfile) then
+			return
+		end
+
+		pcall(function()
+			if isfile(path) then
+				delfile(path)
+			end
+		end)
+	end
+
+	---Write a timing to the rain timings folder.
+	---@param timing AnimationTiming
+	---@return boolean
+	local function writeTimingFile(timing)
+		if not ensureFolder() then
+			return false
+		end
+
+		local ok, json = pcall(httpService.JSONEncode, httpService, timing:serialize())
+		if not ok then
+			return false
+		end
+
+		local path = pathFor(timing)
+		if not pcall(writefile, path, json) then
+			return false
+		end
+
+		-- If the timing was renamed, remove the file it used to live in.
+		local old = fileOf[timing._id]
+		if old and old ~= path then
+			ownerOf[old] = nil
+
+			deleteFile(old)
+		end
+
+		fileOf[timing._id] = path
+		ownerOf[path] = timing._id
+
+		return true
+	end
+
+	---Delete a timing's file by animation id.
+	---@param aid string
+	local function deleteTimingFile(aid)
+		local path = fileOf[aid]
+		if not path then
+			return
+		end
+
+		deleteFile(path)
+
+		ownerOf[path] = nil
+		fileOf[aid] = nil
+	end
+
+	---Load every timing in the rain timings folder into auto defense.
+	---@return number
+	function TimingBuilder.loadSaved()
+		if not (listfiles and isfolder and isfolder(FOLDER)) then
+			return 0
+		end
+
+		local config = SaveManager.as and SaveManager.as.config
+		if not config then
+			return 0
+		end
+
+		local okList, files = pcall(listfiles, FOLDER)
+		if not okList then
+			return 0
+		end
+
+		local loaded = 0
+
+		for _, path in next, files do
+			if not string.match(path, "%.json$") then
+				continue
+			end
+
+			local ok = pcall(function()
+				local decoded = httpService:JSONDecode(readfile(path))
+				local timing = AnimationTiming.new(decoded)
+
+				if timing._id == "" or timing.name == "" or timing.name == "N/A" then
+					return
+				end
+
+				-- Remember which file this animation lives in (normalize separators).
+				local normalized = string.gsub(path, "\\", "/")
+				normalized = FOLDER .. "/" .. (string.match(normalized, "([^/]+)$") or normalized)
+
+				fileOf[timing._id] = normalized
+				ownerOf[normalized] = timing._id
+
+				-- Skip only if the config already has this animation; config timings override built-in ones.
+				if config.timings[timing._id] then
+					return
+				end
+
+				config:push(timing)
+
+				loaded = loaded + 1
+			end)
+
+			if not ok then
+				continue
+			end
+		end
+
+		return loaded
+	end
+
+	---Persist timings to the loaded config.
+	local function persist()
+		if SaveManager.llcn then
+			SaveManager.write(SaveManager.llcn)
+		else
+			Logger.notify("Timing saved. Load or create a config in the Combat tab to keep it after rejoining.")
+		end
+	end
+
+	---Add the working timing to auto defense.
+	---@return AnimationTiming?
+	local function applyToAutoDefense()
+		local timing = state.timing
+		if not timing or not state.aid then
+			return Logger.notify("Pick an animation first.")
+		end
+
+		local name = nameBox.Text
+		if name == "" then
+			return Logger.notify("Enter a timing name first.")
+		end
+
+		local config = SaveManager.as and SaveManager.as.config
+		if not config then
+			return Logger.notify("Timing config is not ready yet.")
+		end
+
+		timing.name = name
+		timing._id = state.aid
+
+		local previous = config.timings[state.aid]
+		if previous then
+			config:remove(previous)
+		end
+
+		local ok, err = pcall(config.push, config, timing:clone())
+		if not ok then
+			if previous then
+				pcall(config.push, config, previous)
+			end
+
+			return Logger.notify("Could not add timing: %s", tostring(err))
+		end
+
+		persist()
+
+		state.listDirty = true
+
+		return timing
+	end
+
+	---Add to auto defense only.
+	local function addToAutoDefense()
+		local timing = applyToAutoDefense()
+		if not timing then
+			return
+		end
+
+		Logger.notify("Added '%s' to auto defense.", timing.name)
+	end
+
+	---Add to auto defense and save to the rain timings folder.
+	local function save()
+		local timing = applyToAutoDefense()
+		if not timing then
+			return
+		end
+
+		local wrote = writeTimingFile(timing)
+
+		Logger.notify(
+			wrote and "Added '%s' to auto defense and saved it to the 'rain timings' folder."
+				or "Added '%s' to auto defense (could not write to the 'rain timings' folder).",
+			timing.name
+		)
+	end
+
+	---Copy timing JSON.
+	local function copyJson()
+		local timing = state.timing
+		if not timing then
+			return Logger.notify("Pick an animation first.")
+		end
+
+		timing.name = nameBox.Text ~= "" and nameBox.Text or timing.name
+
+		local ok, json = pcall(httpService.JSONEncode, httpService, timing:serialize())
+		if not ok then
+			return Logger.notify("Could not encode timing: %s", tostring(json))
+		end
+
+		if setclipboard and pcall(setclipboard, json) then
+			return Logger.notify("Timing JSON copied to clipboard.")
+		end
+
+		Logger.notify("Clipboard is not available in this executor.")
+	end
+
+	---Clear working timing.
+	local function clearTiming()
+		if not state.aid then
+			return
+		end
+
+		state.timing = AnimationTiming.new()
+		state.timing._id = state.aid
+		state.timing.name = ""
+		state.sel = nil
+
+		refreshAll()
+	end
+
+	---Delete saved timing.
+	local function deleteTiming()
+		local config = SaveManager.as and SaveManager.as.config
+		if not config or not state.aid then
+			return
+		end
+
+		local existing = config.timings[state.aid]
+		if not existing then
+			return Logger.notify("No saved timing for this animation.")
+		end
+
+		config:remove(existing)
+		persist()
+		deleteTimingFile(state.aid)
+
+		state.listDirty = true
+		clearTiming()
+	end
+
+	---Add an action at the current time.
+	---@param actionType string
+	local function addAction(actionType)
+		if not state.timing then
+			return Logger.notify("Pick an animation first.")
+		end
+
+		local actions = state.timing.actions
+		local index = #actions:stack() + 1
+		local name = string.format("%s %d", actionType, index)
+
+		while actions:find(name) do
+			index = index + 1
+			name = string.format("%s %d", actionType, index)
+		end
+
+		local when = state.track and math.round(state.track.TimePosition * 1000) or 0
+		local action = Action.new({ _type = actionType, when = when, name = name })
+
+		actions:push(action)
+		state.sel = action
+
+		sortActions()
+		rebuildActions()
+		layoutMarkers()
+		syncEditor()
+	end
+
+	---Rebuild markers on the scrubber.
+	function layoutMarkers()
+		for _, child in next, scrub:GetChildren() do
+			if child.Name == "Marker" then
+				child:Destroy()
+			end
+		end
+
+		if not state.timing then
+			return
+		end
+
+		local length = state.track and state.track.Length or 0
+
+		for _, action in next, state.timing.actions:stack() do
+			local fraction = length > 0 and math.clamp((action._when / 1000) / length, 0, 1) or 0
+			local selected = action == state.sel
+
+			local marker = mk("TextButton", {
+				Name = "Marker",
+				Text = "",
+				AutoButtonColor = false,
+				BackgroundColor3 = TYPE_COLORS[action._type] or Color3.new(1, 1, 1),
+				BorderColor3 = Color3.new(1, 1, 1),
+				BorderSizePixel = selected and 1 or 0,
+				Position = UDim2.fromOffset(math.floor(fraction * SCRUB_WIDTH) - 3, 0),
+				Size = UDim2.fromOffset(6, 16),
+				ZIndex = 3,
+			}, scrub)
+
+			marker.InputBegan:Connect(function(input)
+				if input.UserInputType ~= Enum.UserInputType.MouseButton1 then
+					return
+				end
+
+				state.sel = action
+				state.dragMarker = action
+
+				rebuildActions()
+				syncEditor()
+			end)
+		end
+	end
+
+	---Rebuild the actions list.
+	function rebuildActions()
+		for _, child in next, actionsFrame:GetChildren() do
+			if child:IsA("TextButton") then
+				child:Destroy()
+			end
+		end
+
+		local stack = state.timing and state.timing.actions:stack() or {}
+		actionsLabel.Text = string.format("Actions (%d)", #stack)
+
+		for index, action in next, stack do
+			local row = mk("TextButton", {
+				AutoButtonColor = false,
+				BackgroundColor3 = action == state.sel and Library.MainColor:Lerp(Library.AccentColor, 0.35)
+					or Library.MainColor,
+				BorderSizePixel = 0,
+				FontFace = FONT,
+				Text = string.format(" %d. %s  %dms", index, action._type, math.round(action._when)),
+				TextSize = 12,
+				TextColor3 = TYPE_COLORS[action._type] or Library.FontColor,
+				TextXAlignment = Enum.TextXAlignment.Left,
+				Size = UDim2.new(1, -6, 0, 20),
+				LayoutOrder = index,
+			}, actionsFrame)
+
+			row.MouseButton1Click:Connect(function()
+				state.sel = action
+
+				rebuildActions()
+				layoutMarkers()
+				syncEditor()
+			end)
+		end
+	end
+
+	---Sync the action editor.
+	function syncEditor()
+		local action = selectedAction()
+
+		edFrame.Visible = action ~= nil
+		edHint.Visible = action == nil
+
+		if not action then
+			return
+		end
+
+		edType.Text = action._type
+		edWhen.Text = tostring(math.round(action._when))
+		edHX.Text = tostring(action.hitbox.X)
+		edHY.Text = tostring(action.hitbox.Y)
+		edHZ.Text = tostring(action.hitbox.Z)
+
+		setOn(edIhbc, action.ihbc)
+	end
+
+	---Sync timing-level controls.
+	local function syncTiming()
+		local timing = state.timing
+
+		nameBox.Text = timing and timing.name ~= "N/A" and timing.name or ""
+		typeButton.Text = "Type: " .. (timing and timing.tag or "Undefined")
+
+		tHX.Text = timing and tostring(timing.hitbox.X) or "0"
+		tHY.Text = timing and tostring(timing.hitbox.Y) or "0"
+		tHZ.Text = timing and tostring(timing.hitbox.Z) or "0"
+
+		for _, entry in next, flagButtons do
+			local raw = timing and timing[entry.key]
+			local on = entry.invert and not raw or (not entry.invert and raw == true)
+
+			setOn(entry.button, on)
+		end
+	end
+
+	---Refresh everything.
+	function refreshAll()
+		syncTiming()
+		rebuildActions()
+		layoutMarkers()
+		syncEditor()
+
+		state.listDirty = true
+	end
+
+	---Rebuild the animation list.
+	function rebuildList()
+		for _, child in next, listFrame:GetChildren() do
+			if child:IsA("TextButton") then
+				child:Destroy()
+			end
+		end
+
+		local rows = {}
+		local config = SaveManager.as and SaveManager.as.config
+
+		if state.mode == "Mine" then
+			if config then
+				for _, timing in next, config:list() do
+					local aid = timing:id()
+					local seen = state.seen[aid]
+
+					rows[#rows + 1] = {
+						aid = aid,
+						text = string.format("%s  [%s]", timing.name, timing.tag),
+						entity = seen and seen.entity or nil,
+					}
+				end
+			end
+		else
+			for _, aid in next, state.order do
+				local seen = state.seen[aid]
+
+				if state.mode == "Self" and not seen.isSelf then
+					continue
+				end
+
+				if state.mode == "Watch" and seen.isSelf then
+					continue
+				end
+
+				local saved = SaveManager.as and SaveManager.as:index(aid)
+				local digits = string.match(aid, "(%d+)$") or aid
+
+				rows[#rows + 1] = {
+					aid = aid,
+					text = string.format(
+						"%s%s  %s  x%d",
+						saved and "* " or "",
+						saved and saved.name or seen.name or "?",
+						digits,
+						seen.count or 1
+					),
+					entity = seen.entity,
+				}
+
+				if #rows >= 60 then
+					break
+				end
+			end
+		end
+
+		listEmpty.Visible = #rows == 0
+		listEmpty.Text = state.mode == "Mine" and "No saved timings yet."
+			or (state.mode == "Pause" and "Paused." or "Waiting for nearby animations...")
+
+		for index, row in next, rows do
+			local object = mk("TextButton", {
+				AutoButtonColor = false,
+				BackgroundColor3 = row.aid == state.aid and Library.MainColor:Lerp(Library.AccentColor, 0.35)
+					or Library.MainColor,
+				BorderSizePixel = 0,
+				FontFace = FONT,
+				Text = " " .. row.text,
+				TextSize = 12,
+				TextColor3 = Library.FontColor,
+				TextXAlignment = Enum.TextXAlignment.Left,
+				TextTruncate = Enum.TextTruncate.AtEnd,
+				Size = UDim2.new(1, -6, 0, 20),
+				LayoutOrder = index,
+			}, listFrame)
+
+			object.MouseButton1Click:Connect(function()
+				selectAnimation(row.aid, row.entity)
+			end)
+		end
+	end
+
+	---Set the collection mode.
+	---@param mode string
+	local function setMode(mode)
+		state.mode = mode
+
+		for name, object in next, modeButtons do
+			setOn(object, name == mode)
+		end
+
+		state.listDirty = true
+	end
+
+	-- Animators we already hooked, and tracks we already counted (weak so dead ones clean up).
+	local hooked = setmetatable({}, { __mode = "k" })
+	local countedTracks = setmetatable({}, { __mode = "k" })
+
+	---Should this track be ignored (idle, walk, etc.)?
+	---@param track AnimationTrack
+	---@return boolean
+	local function ignoredTrack(track)
+		local priority = track.Priority
+
+		return priority == Enum.AnimationPriority.Core
+			or priority == Enum.AnimationPriority.Idle
+			or priority == Enum.AnimationPriority.Movement
+	end
+
+	---Hook an animator so ids are captured at the play instant (before the game blanks them).
+	---@param model Model
+	---@param animator Animator
+	local function hookAnimator(model, animator)
+		if hooked[animator] then
+			return
+		end
+
+		local localPlayer = players.LocalPlayer
+		local isSelf = localPlayer ~= nil and model == localPlayer.Character
+
+		hooked[animator] = animator.AnimationPlayed:Connect(function(track)
+			if ignoredTrack(track) then
+				return
+			end
+
+			local animation = track.Animation
+			local aid = animation and tostring(animation.AnimationId) or ""
+
+			if aid ~= "" then
+				countedTracks[track] = true
+
+				record(model, aid, isSelf)
+			end
+		end)
+
+		connections[#connections + 1] = hooked[animator]
+	end
+
+	---Poll nearby entities: hook new animators and pick up anything already playing.
+	local function poll()
+		local live = workspace:FindFirstChild("Live")
+		if not live then
+			return
+		end
+
+		local localPlayer = players.LocalPlayer
+		local myCharacter = localPlayer and localPlayer.Character
+		local myRoot = myCharacter and myCharacter:FindFirstChild("HumanoidRootPart")
+
+		for _, model in next, live:GetChildren() do
+			if not model:IsA("Model") then
+				continue
+			end
+
+			local isSelf = model == myCharacter
+
+			if not isSelf and myRoot then
+				local root = model:FindFirstChild("HumanoidRootPart")
+				if not root or (root.Position - myRoot.Position).Magnitude > 200 then
+					continue
+				end
+			end
+
+			local animator = model:FindFirstChildWhichIsA("Animator", true)
+			if not animator then
+				continue
+			end
+
+			hookAnimator(model, animator)
+
+			for _, track in next, animator:GetPlayingAnimationTracks() do
+				if countedTracks[track] or ignoredTrack(track) then
+					continue
+				end
+
+				local animation = track.Animation
+				local aid = animation and tostring(animation.AnimationId) or ""
+
+				if aid ~= "" then
+					countedTracks[track] = true
+
+					record(model, aid, isSelf)
+				end
+			end
+		end
+	end
+
+	---Per-frame update.
+	local function onRender()
+		if not gui or not gui.Enabled then
+			return
+		end
+
+		local track = state.track
+
+		if track then
+			local length = track.Length
+
+			track:AdjustSpeed(state.paused and 0 or state.speed)
+
+			if not timeBox:IsFocused() then
+				timeBox.Text = string.format("%.3f", track.TimePosition)
+			end
+
+			animLabel.Text = string.format("anim %.2f/%.2f", track.TimePosition, length)
+			playhead.Position = UDim2.new(0, math.floor((length > 0 and track.TimePosition / length or 0) * SCRUB_WIDTH), 0, 0)
+			playButton.Text = state.paused and ">" or "||"
+
+			if length ~= state.lastLen then
+				state.lastLen = length
+				lengthLabel.Text = length > 0 and string.format("%.2fs", length) or "loading..."
+
+				layoutMarkers()
+			end
+		else
+			animLabel.Text = "anim 0.00/0.00"
+			playhead.Position = UDim2.fromOffset(0, 0)
+			playButton.Text = ">"
+		end
+
+		updateCamera()
+
+		if state.listDirty and os.clock() - state.lastList > 0.25 then
+			state.listDirty = false
+			state.lastList = os.clock()
+
+			rebuildList()
+		end
+	end
+
+	---Set track time position.
+	---@param seconds number
+	local function setTime(seconds)
+		if not state.track then
+			return
+		end
+
+		state.track.TimePosition = math.clamp(seconds, 0, state.track.Length)
+	end
+
+	---Build the window.
+	local function build()
+		gui = CoreGuiManager.imark(Instance.new("ScreenGui"))
+		gui.Name = "TimingBuilder"
+		gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+		gui.DisplayOrder = 10000 -- Above the main menu (9999).
+		gui.ResetOnSpawn = false
+		gui.Enabled = false
+
+		-- CoreGuiManager.set() already ran at startup, so this lazily created gui must be parented here.
+		gui.Parent = game:GetService("CoreGui")
+
+		window = mk("Frame", {
+			Name = "Window",
+			BackgroundColor3 = Library.BackgroundColor or Library.MainColor,
+			BorderColor3 = Library.AccentColor,
+			Position = UDim2.new(0.5, -350, 0.5, -300),
+			Size = UDim2.fromOffset(700, 600),
+			Active = true,
+		}, gui)
+
+		-- Title bar.
+		local title = mk("Frame", {
+			BackgroundTransparency = 1,
+			Size = UDim2.new(1, 0, 0, 34),
+		}, window)
+
+		mk("TextLabel", {
+			BackgroundTransparency = 1,
+			Text = "Timing Builder",
+			FontFace = FONT_BOLD,
+			TextSize = 13,
+			TextColor3 = Library.FontColor,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			Position = UDim2.fromOffset(10, 0),
+			Size = UDim2.fromOffset(200, 34),
+		}, title)
+
+		hintLabel = mk("TextLabel", {
+			BackgroundTransparency = 1,
+			Text = "fight something with Watch on, then pick an animation",
+			FontFace = FONT,
+			TextSize = 11,
+			TextColor3 = Library.FontColor,
+			TextTransparency = 0.25,
+			TextXAlignment = Enum.TextXAlignment.Right,
+			TextTruncate = Enum.TextTruncate.AtEnd,
+			Position = UDim2.fromOffset(200, 0),
+			Size = UDim2.fromOffset(450, 34),
+			Active = false,
+		}, title)
+
+		button(title, "x", 664, 6, 26, 22, function()
+			TimingBuilder.visible(false)
+		end)
+
+		title.Active = true
+
+		title.InputBegan:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.MouseButton1 then
+				state.dragWindow = true
+				state.dragMouse = userInputService:GetMouseLocation()
+				state.dragStart = window.Position
+			end
+		end)
+
+		-- Left: viewport.
+		label(window, "Pick an animation on the right, or click one in the list.", 8, 38, 396, 16, 11)
+
+		viewport = mk("ViewportFrame", {
+			BackgroundColor3 = Color3.fromRGB(16, 24, 30),
+			BorderColor3 = Library.OutlineColor,
+			Ambient = Color3.fromRGB(190, 190, 190),
+			LightColor = Color3.fromRGB(255, 255, 255),
+			Position = UDim2.fromOffset(8, 58),
+			Size = UDim2.fromOffset(396, 260),
+		}, window)
+
+		worldModel = mk("WorldModel", {}, viewport)
+		camera = mk("Camera", {}, viewport)
+		viewport.CurrentCamera = camera
+
+		previewMessage = mk("TextLabel", {
+			BackgroundTransparency = 1,
+			Text = "",
+			FontFace = FONT,
+			TextSize = 12,
+			TextColor3 = Library.FontColor,
+			Size = UDim2.fromScale(1, 1),
+			Visible = false,
+			ZIndex = 5,
+		}, viewport)
+
+		mk("TextLabel", {
+			BackgroundTransparency = 1,
+			Text = "drag: orbit | scroll: zoom",
+			FontFace = FONT,
+			TextSize = 10,
+			TextColor3 = Library.FontColor,
+			TextTransparency = 0.4,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			Position = UDim2.new(0, 6, 1, -16),
+			Size = UDim2.fromOffset(200, 14),
+			ZIndex = 5,
+		}, viewport)
+
+		viewport.InputBegan:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.MouseButton1 then
+				state.dragView = true
+			end
+		end)
+
+		viewport.InputChanged:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.MouseWheel then
+				state.dist = math.clamp(state.dist - input.Position.Z * 0.8, 2, 80)
+			end
+		end)
+
+		-- Transport.
+		button(window, "|<", 8, 324, 30, 22, function()
+			setTime(0)
+		end)
+
+		button(window, "<", 42, 324, 30, 22, function()
+			state.paused = true
+			setTime((state.track and state.track.TimePosition or 0) - 0.01)
+		end)
+
+		playButton = button(window, ">", 76, 324, 40, 22, function()
+			state.paused = not state.paused
+		end)
+
+		button(window, ">|", 120, 324, 30, 22, function()
+			state.paused = true
+			setTime((state.track and state.track.TimePosition or 0) + 0.01)
+		end)
+
+		timeBox = textbox(window, "0.000", "0.000", 158, 324, 70, 22)
+		timeBox.FocusLost:Connect(function()
+			local value = tonumber(timeBox.Text)
+			if value then
+				state.paused = true
+				setTime(value)
+			end
+		end)
+
+		animLabel = label(window, "anim 0.00/0.00", 236, 324, 110, 22, 11)
+
+		speedButton = button(window, "1x", 354, 324, 50, 22, function()
+			local index = table.find(SPEEDS, state.speed) or 3
+			state.speed = SPEEDS[index % #SPEEDS + 1]
+
+			speedButton.Text = tostring(state.speed) .. "x"
+		end)
+
+		-- Scrubber.
+		scrub = mk("Frame", {
+			BackgroundColor3 = Library.MainColor,
+			BorderColor3 = Library.OutlineColor,
+			Position = UDim2.fromOffset(8, 352),
+			Size = UDim2.fromOffset(SCRUB_WIDTH, 16),
+		}, window)
+
+		playhead = mk("Frame", {
+			Name = "Playhead",
+			BackgroundColor3 = Color3.new(1, 1, 1),
+			BorderSizePixel = 0,
+			Size = UDim2.fromOffset(2, 16),
+			ZIndex = 2,
+		}, scrub)
+
+		scrub.InputBegan:Connect(function(input)
+			if input.UserInputType ~= Enum.UserInputType.MouseButton1 then
+				return
+			end
+
+			state.dragScrub = true
+			state.paused = true
+
+			if state.track then
+				local fraction = math.clamp((input.Position.X - scrub.AbsolutePosition.X) / scrub.AbsoluteSize.X, 0, 1)
+				setTime(fraction * state.track.Length)
+			end
+		end)
+
+		label(window, "0s", 8, 370, 40, 12, 10)
+		label(window, "drag markers to retime", 8, 370, 396, 12, 10, Enum.TextXAlignment.Center)
+		lengthLabel = label(window, "loading...", 304, 370, 100, 12, 10, Enum.TextXAlignment.Right)
+
+		-- Add action buttons.
+		for index, entry in next, ADD_BUTTONS do
+			local object = button(window, entry[1], 8 + (index - 1) * 80, 386, 76, 24, function()
+				addAction(entry[2])
+			end)
+
+			object.TextColor3 = TYPE_COLORS[entry[2]]
+		end
+
+		-- Name / type.
+		label(window, "Name", 8, 416, 40, 24, 12)
+
+		nameBox = textbox(window, "timing name", "", 48, 416, 226, 24)
+		nameBox.FocusLost:Connect(function()
+			if state.timing then
+				state.timing.name = nameBox.Text
+			end
+		end)
+
+		typeButton = button(window, "Type: Undefined", 280, 416, 124, 24, function()
+			if not state.timing then
+				return
+			end
+
+			local index = table.find(TAGS, state.timing.tag) or 1
+			state.timing.tag = TAGS[index % #TAGS + 1]
+
+			typeButton.Text = "Type: " .. state.timing.tag
+		end)
+
+		-- Flags.
+		for index, def in next, FLAGS do
+			local column = (index - 1) % 4
+			local row = math.floor((index - 1) / 4)
+
+			local object = button(window, def[1], 8 + column * 100, 446 + row * 24, 96, 22)
+			object.TextSize = 10
+
+			local entry = { key = def[2], invert = def[3], button = object }
+			flagButtons[#flagButtons + 1] = entry
+
+			object.MouseButton1Click:Connect(function()
+				if not state.timing then
+					return
+				end
+
+				state.timing[entry.key] = not state.timing[entry.key]
+
+				syncTiming()
+			end)
+		end
+
+		-- Timing hitbox.
+		label(window, "Hitbox", 8, 522, 50, 22, 12)
+		tHX = textbox(window, "X", "0", 62, 522, 50, 22)
+		tHY = textbox(window, "Y", "0", 116, 522, 50, 22)
+		tHZ = textbox(window, "Z", "0", 170, 522, 50, 22)
+
+		local function applyTimingHitbox()
+			if state.timing then
+				state.timing.hitbox = Vector3.new(tonumber(tHX.Text) or 0, tonumber(tHY.Text) or 0, tonumber(tHZ.Text) or 0)
+			end
+		end
+
+		tHX.FocusLost:Connect(applyTimingHitbox)
+		tHY.FocusLost:Connect(applyTimingHitbox)
+		tHZ.FocusLost:Connect(applyTimingHitbox)
+
+		-- Bottom bar.
+		mk("Frame", {
+			BackgroundColor3 = Library.OutlineColor,
+			BorderSizePixel = 0,
+			Position = UDim2.fromOffset(0, 556),
+			Size = UDim2.new(1, 0, 0, 1),
+		}, window)
+
+		local addButton = button(window, "Add to Auto Defense", 412, 564, 278, 28, addToAutoDefense)
+		addButton.TextColor3 = Color3.fromRGB(120, 200, 255)
+		addButton.FontFace = FONT_BOLD
+
+		local saveButton = button(window, "Save", 8, 564, 98, 28, save)
+		saveButton.TextColor3 = Color3.fromRGB(120, 235, 140)
+		saveButton.FontFace = FONT_BOLD
+
+		button(window, "Copy JSON", 112, 564, 98, 28, copyJson)
+		button(window, "Clear", 216, 564, 80, 28, clearTiming)
+
+		local deleteButton = button(window, "Delete", 302, 564, 80, 28, deleteTiming)
+		deleteButton.TextColor3 = Color3.fromRGB(255, 110, 110)
+
+		-- Right: animations.
+		label(window, "Animations", 412, 40, 120, 18, 12).FontFace = FONT_BOLD
+
+		modeButtons = {}
+		for index, mode in next, MODES do
+			local object = button(window, mode, 412 + 76 + (index - 1) * 50, 38, 48, 20, function()
+				setMode(mode)
+			end)
+
+			object.TextSize = 11
+			modeButtons[mode] = object
+		end
+
+		idBox = textbox(window, "animation id", "", 412, 64, 204, 22)
+		button(window, "Load", 620, 64, 70, 22, function()
+			local aid = normalizeId(idBox.Text)
+			if not aid then
+				return Logger.notify("Enter a valid animation id.")
+			end
+
+			local seen = state.seen[aid]
+			selectAnimation(aid, seen and seen.entity or nil)
+		end)
+
+		listFrame = mk("ScrollingFrame", {
+			BackgroundColor3 = Library.MainColor,
+			BorderColor3 = Library.OutlineColor,
+			Position = UDim2.fromOffset(412, 92),
+			Size = UDim2.fromOffset(278, 222),
+			CanvasSize = UDim2.new(),
+			AutomaticCanvasSize = Enum.AutomaticSize.Y,
+			ScrollBarThickness = 4,
+		}, window)
+
+		mk("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 1) }, listFrame)
+
+		listEmpty = mk("TextLabel", {
+			BackgroundTransparency = 1,
+			Text = "Waiting for nearby animations...",
+			FontFace = FONT,
+			TextSize = 12,
+			TextColor3 = Library.FontColor,
+			TextTransparency = 0.3,
+			Position = UDim2.fromOffset(412, 92),
+			Size = UDim2.fromOffset(278, 222),
+			ZIndex = 2,
+		}, window)
+
+		-- Right: actions.
+		actionsLabel = label(window, "Actions (0)", 412, 324, 200, 18, 12)
+		actionsLabel.FontFace = FONT_BOLD
+
+		actionsFrame = mk("ScrollingFrame", {
+			BackgroundColor3 = Library.MainColor,
+			BorderColor3 = Library.OutlineColor,
+			Position = UDim2.fromOffset(412, 346),
+			Size = UDim2.fromOffset(278, 104),
+			CanvasSize = UDim2.new(),
+			AutomaticCanvasSize = Enum.AutomaticSize.Y,
+			ScrollBarThickness = 4,
+		}, window)
+
+		mk("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 1) }, actionsFrame)
+
+		-- Right: action editor.
+		edHint = mk("TextLabel", {
+			BackgroundTransparency = 1,
+			Text = "Select an action to edit it.",
+			FontFace = FONT,
+			TextSize = 12,
+			TextColor3 = Library.FontColor,
+			TextTransparency = 0.3,
+			Position = UDim2.fromOffset(412, 458),
+			Size = UDim2.fromOffset(278, 40),
+		}, window)
+
+		edFrame = mk("Frame", {
+			BackgroundTransparency = 1,
+			Position = UDim2.fromOffset(412, 456),
+			Size = UDim2.fromOffset(278, 96),
+			Visible = false,
+		}, window)
+
+		edType = button(edFrame, "Parry", 0, 0, 150, 24, function()
+			local action = selectedAction()
+			if not action then
+				return
+			end
+
+			local index = table.find(ACTION_TYPES, action._type) or 0
+			action._type = ACTION_TYPES[index % #ACTION_TYPES + 1]
+
+			rebuildActions()
+			layoutMarkers()
+			syncEditor()
+		end)
+
+		label(edFrame, "ms", 158, 0, 20, 24, 12)
+		edWhen = textbox(edFrame, "0", "0", 178, 0, 100, 24)
+		edWhen.FocusLost:Connect(function()
+			local action = selectedAction()
+			local value = tonumber(edWhen.Text)
+
+			if action and value then
+				action._when = math.max(value, 0)
+
+				sortActions()
+				rebuildActions()
+				layoutMarkers()
+			end
+
+			syncEditor()
+		end)
+
+		label(edFrame, "Hitbox", 0, 30, 50, 22, 12)
+		edHX = textbox(edFrame, "X", "0", 54, 30, 50, 22)
+		edHY = textbox(edFrame, "Y", "0", 108, 30, 50, 22)
+		edHZ = textbox(edFrame, "Z", "0", 162, 30, 50, 22)
+
+		local function applyActionHitbox()
+			local action = selectedAction()
+			if action then
+				action.hitbox = Vector3.new(tonumber(edHX.Text) or 0, tonumber(edHY.Text) or 0, tonumber(edHZ.Text) or 0)
+			end
+		end
+
+		edHX.FocusLost:Connect(applyActionHitbox)
+		edHY.FocusLost:Connect(applyActionHitbox)
+		edHZ.FocusLost:Connect(applyActionHitbox)
+
+		edIhbc = button(edFrame, "Ignore HB Check", 0, 58, 130, 24, function()
+			local action = selectedAction()
+			if action then
+				action.ihbc = not action.ihbc
+
+				syncEditor()
+			end
+		end)
+
+		local deleteAction = button(edFrame, "Delete Action", 138, 58, 100, 24, function()
+			local action = selectedAction()
+			if not action or not state.timing then
+				return
+			end
+
+			state.timing.actions:remove(action)
+			state.sel = nil
+
+			rebuildActions()
+			layoutMarkers()
+			syncEditor()
+		end)
+
+		deleteAction.TextColor3 = Color3.fromRGB(255, 110, 110)
+
+		-- Initial mode highlight.
+		setMode("Watch")
+		setPreviewMessage("Pick an animation to preview it.")
+		refreshAll()
+
+		-- Global connections.
+		connections[#connections + 1] = userInputService.InputChanged:Connect(function(input)
+			if input.UserInputType ~= Enum.UserInputType.MouseMovement then
+				return
+			end
+
+			if state.dragWindow then
+				local mouse = userInputService:GetMouseLocation()
+				local start = state.dragStart
+				local origin = state.dragMouse
+
+				if start and origin then
+					window.Position = UDim2.new(
+						start.X.Scale,
+						start.X.Offset + (mouse.X - origin.X),
+						start.Y.Scale,
+						start.Y.Offset + (mouse.Y - origin.Y)
+					)
+				end
+			elseif state.dragView then
+				state.yaw = state.yaw - input.Delta.X * 0.01
+				state.pitch = math.clamp(state.pitch + input.Delta.Y * 0.01, -1.2, 1.2)
+			elseif state.dragMarker then
+				local length = state.track and state.track.Length or 0
+
+				if length > 0 then
+					local fraction = math.clamp((input.Position.X - scrub.AbsolutePosition.X) / scrub.AbsoluteSize.X, 0, 1)
+					state.dragMarker._when = math.round(fraction * length * 1000)
+
+					layoutMarkers()
+					syncEditor()
+				end
+			elseif state.dragScrub and state.track then
+				local fraction = math.clamp((input.Position.X - scrub.AbsolutePosition.X) / scrub.AbsoluteSize.X, 0, 1)
+				setTime(fraction * state.track.Length)
+			end
+		end)
+
+		connections[#connections + 1] = userInputService.InputEnded:Connect(function(input)
+			if input.UserInputType ~= Enum.UserInputType.MouseButton1 then
+				return
+			end
+
+			if state.dragMarker then
+				sortActions()
+				rebuildActions()
+				layoutMarkers()
+			end
+
+			state.dragWindow = false
+			state.dragView = false
+			state.dragScrub = false
+			state.dragMarker = nil
+		end)
+
+		local reported = false
+
+		connections[#connections + 1] = runService.RenderStepped:Connect(function()
+			local ok, err = pcall(onRender)
+
+			if not ok and not reported then
+				reported = true
+
+				Logger.notify("Timing Builder error: %s", tostring(err))
+			end
+		end)
+
+		connections[#connections + 1] = runService.Heartbeat:Connect(function()
+			if not gui.Enabled or os.clock() - state.lastPoll < 0.1 then
+				return
+			end
+
+			state.lastPoll = os.clock()
+
+			poll()
+		end)
+	end
+
+	---Set visibility of the Timing Builder.
+	---@param visible boolean
+	function TimingBuilder.visible(visible)
+		if not gui then
+			if not visible then
+				return
+			end
+
+			local ok, err = pcall(build)
+			if not ok then
+				if gui then
+					gui:Destroy()
+					gui = nil
+				end
+
+				return Logger.notify("Timing Builder failed to open: %s", tostring(err))
+			end
+		end
+
+		gui.Enabled = visible
+
+		if not visible then
+			clearPreview()
+			setPreviewMessage("Pick an animation to preview it.")
+		elseif state.aid then
+			loadPreview(state.aid, state.entity)
+		end
+	end
+
+	---Toggle the Timing Builder.
+	function TimingBuilder.toggle()
+		TimingBuilder.visible(not (gui and gui.Enabled))
+	end
+
+	---Detach the Timing Builder.
+	function TimingBuilder.detach()
+		for _, connection in next, connections do
+			connection:Disconnect()
+		end
+
+		connections = {}
+
+		clearPreview()
+
+		if gui then
+			gui:Destroy()
+			gui = nil
+		end
+	end
+
+	return TimingBuilder
+end)()
+
+end)
 __bundle_register("Menu/TimingBuilderTab", function(require, _LOADED, __bundle_register, __bundle_modules)
 -- TimingBuilderTab module.
 local TimingBuilderTab = {}
@@ -93244,6 +94966,31 @@ local Logger = require("Utility/Logger")
 ---@param groupbox table
 function TimingBuilderTab.initBuilderSection(groupbox)
 	local visualizerOpen = false
+
+	groupbox:AddButton("Open Timing Builder", function()
+		local ok, TimingBuilder = pcall(require, "Features/Game/TimingBuilder")
+		if not ok or type(TimingBuilder) ~= "table" then
+			return Logger.notify("Timing Builder failed to load: %s", tostring(TimingBuilder))
+		end
+
+		TimingBuilder.toggle()
+	end)
+
+	groupbox:AddButton("Load Rain Timings Into Auto Defense", function()
+		local ok, TimingBuilder = pcall(require, "Features/Game/TimingBuilder")
+		if not ok or type(TimingBuilder) ~= "table" or not TimingBuilder.loadSaved then
+			return Logger.notify("Timing Builder is not available.")
+		end
+
+		local okLoad, count = pcall(TimingBuilder.loadSaved)
+		if not okLoad then
+			return Logger.notify("Could not load rain timings: %s", tostring(count))
+		end
+
+		Logger.notify("Added %i timings from the 'rain timings' folder to auto defense.", count or 0)
+	end)
+
+	groupbox:AddDivider()
 
 	groupbox:AddToggle("SaveParriedAnimations", {
 		Text = "Save Parried Animations",
@@ -93277,6 +95024,16 @@ end
 ---Initialize tab.
 ---@param window table
 function TimingBuilderTab.init(window)
+	-- Load timings saved in the "rain timings" workspace folder into auto defense.
+	local okTb, TimingBuilder = pcall(require, "Features/Game/TimingBuilder")
+	if okTb and type(TimingBuilder) == "table" and TimingBuilder.loadSaved then
+		local okLoad, count = pcall(TimingBuilder.loadSaved)
+
+		if okLoad and count and count > 0 then
+			Logger.notify("Loaded %i timings from the 'rain timings' folder.", count)
+		end
+	end
+
 	-- Create tab.
 	local tab = window:AddTab("Timing Builder", "Combat", Icons.Builder)
 
