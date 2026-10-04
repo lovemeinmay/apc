@@ -58739,7 +58739,30 @@ function SaveManager.init()
 	    	            rsc = false,
 	    	            ieae = false,
 	    	            iapf = false,
-	    	            actions = {},
+	    	            actions = {
+	    	                {
+	    	                    _type = "zKXXS",
+	    	                    name = "zKXXS\010\027",
+	    	                    hitbox = {
+	    	                        X = -68.58333333333333,
+	    	                        Y = -68.58333333333333,
+	    	                        Z = -68.58333333333333
+	    	                    },
+	    	                    when = -35.25,
+	    	                    ihbc = false
+	    	                },
+	    	                {
+	    	                    _type = "y^KX^\010hFEIA",
+	    	                    name = "y^KX^\010hFEIA\010\024",
+	    	                    hitbox = {
+	    	                        X = -68.58333333333333,
+	    	                        Y = -68.58333333333333,
+	    	                        Z = -68.58333333333333
+	    	                    },
+	    	                    when = -33.583333333333336,
+	    	                    ihbc = false
+	    	                }
+	    	            },
 	    	            ndfb = false,
 	    	            nbfb = false,
 	    	            _id = "XHRKYYO^CN\016\005\005\019\027\030\019\025\030\018\019\025\029",
@@ -58753,7 +58776,7 @@ function SaveManager.init()
 	    	                Y = -68.58333333333333,
 	    	                Z = -68.58333333333333
 	    	            },
-	    	            fhb = false,
+	    	            fhb = true,
 	    	            imdd = -68.58333333333333,
 	    	            duih = false,
 	    	            rsd = 0,
@@ -61723,7 +61746,7 @@ function SaveManager.init()
 	    	                        Y = -67.41666666666667,
 	    	                        Z = -67.58333333333333
 	    	                    },
-	    	                    when = -51.91666666666667,
+	    	                    when = -49.25,
 	    	                    ihbc = false
 	    	                }
 	    	            },
@@ -61734,7 +61757,7 @@ function SaveManager.init()
 	    	            rpue = false,
 	    	            srpn = false,
 	    	            punishable = 0,
-	    	            name = "yKDM_CDOnC\\O",
+	    	            name = "yKDM_CDOnC\092O",
 	    	            hitbox = {
 	    	                X = -68.58333333333333,
 	    	                Y = -68.58333333333333,
@@ -61745,7 +61768,7 @@ function SaveManager.init()
 	    	            duih = false,
 	    	            rsd = 0,
 	    	            umoa = true,
-	    	            smod = "yKDM_CDOnC\\O",
+	    	            smod = "yKDM_CDOnC\092O",
 	    	            uif = false,
 	    	            bfht = 0.3,
 	    	            ibi = false,
@@ -67743,6 +67766,65 @@ function SaveManager.init()
 	    	            aatk = false,
 	    	            imxd = -43.5,
 	    	            tag = "Undefined",
+	    	            STOP_TRYING_TO_DUMP_TIMINGS_LOL = "You can't unless you reverse Luraph or dynamically dump them <3"
+	    	        },
+	    ["XHRKYYO^CN\016\005\005\027\025\019\027\024\026\027\026\024\030\028\026\027\029\027"] = {
+	    	            rpd = 0,
+	    	            hso = 0,
+	    	            rsc = false,
+	    	            ieae = false,
+	    	            iapf = false,
+	    	            actions = {
+	    	                {
+	    	                    _type = "zKXXS",
+	    	                    name = "zKXXS\010\027",
+	    	                    hitbox = {
+	    	                        X = -67.58333333333333,
+	    	                        Y = -67.91666666666667,
+	    	                        Z = -67.41666666666667
+	    	                    },
+	    	                    when = -11.916666666666664,
+	    	                    ihbc = false
+	    	                }
+	    	            },
+	    	            ndfb = false,
+	    	            nbfb = true,
+	    	            _id = "XHRKYYO^CN\016\005\005\027\025\019\027\024\026\027\026\024\030\028\026\027\029\027",
+	    	            mat = 2000,
+	    	            rpue = false,
+	    	            srpn = false,
+	    	            punishable = 0,
+	    	            name = "~B_DNOXaCIAdO]",
+	    	            hitbox = {
+	    	                X = -67.58333333333333,
+	    	                Y = -67.91666666666667,
+	    	                Z = -67.41666666666667
+	    	            },
+	    	            fhb = true,
+	    	            imdd = -68.58333333333333,
+	    	            duih = false,
+	    	            rsd = 0,
+	    	            umoa = false,
+	    	            smod = "d\005k",
+	    	            uif = false,
+	    	            bfht = 0.3,
+	    	            ibi = false,
+	    	            pfh = false,
+	    	            dp = false,
+	    	            after = 0,
+	    	            rsaid = "",
+	    	            imb = false,
+	    	            pfht = 0.15,
+	    	            iae = false,
+	    	            phds = 0,
+	    	            ha = false,
+	    	            phd = false,
+	    	            rsaw = 4,
+	    	            smn = false,
+	    	            nvfb = true,
+	    	            aatk = false,
+	    	            imxd = -63.583333333333336,
+	    	            tag = "Mantra",
 	    	            STOP_TRYING_TO_DUMP_TIMINGS_LOL = "You can't unless you reverse Luraph or dynamically dump them <3"
 	    	        }
 	}
@@ -74800,6 +74882,22 @@ Defender.rpue = LPH_NO_VIRTUALIZE(function(self, ref, timing, info, cache, optio
 	self:parry(timing, nil)
 end)
 
+---Are we in the middle of our own M1 chain? Only then does a hit on the attacker mean parrying would contest our M1 priority.
+---After winning a parry trade we are not in an M1 chain, so the attacker's next attack must still be parried.
+---@return boolean
+local function inM1Chain()
+	local effectReplicator = replicatedStorage:FindFirstChild("EffectReplicator")
+	local effectReplicatorModule = effectReplicator and require(effectReplicator)
+	if not effectReplicatorModule then
+		return false
+	end
+
+	return effectReplicatorModule:FindEffect("LightAttack") ~= nil
+		or effectReplicatorModule:FindEffect("CriticalAttack") ~= nil
+		or effectReplicatorModule:FindEffect("Followup") ~= nil
+		or effectReplicatorModule:FindEffect("AirCombo") ~= nil
+end
+
 ---Check if we're in a valid state to proceed with action handling. Extend me.
 ---@param self Defender
 ---@param options ValidationOptions
@@ -74827,7 +74925,7 @@ Defender.valid = LPH_NO_VIRTUALIZE(function(self, options)
 		return internalNotifyFunction(timing, "(%i <= %i) Intentionally did not run.", integer, rate)
 	end
 
-	if self.hits and next(self.hits) then
+	if self.hits and next(self.hits) and inM1Chain() then
 		return internalNotifyFunction(timing, "Already landed a hit on the attacker; skipping to not contest M1 priority.")
 	end
 
@@ -75690,7 +75788,7 @@ Defender.parry = LPH_NO_VIRTUALIZE(function(self, timing, action)
 		return internalNotify(timing, "Action 'Parry' blocked because there are already existing IFrames.")
 	end
 	
-	if self.hits and next(self.hits) then
+	if self.hits and next(self.hits) and inM1Chain() then
 		return internalNotify(timing, "Action 'Parry' blocked because opponent is in hitstun.")
 	end
 
@@ -80287,6 +80385,10 @@ AnimatorDefender.process = LPH_NO_VIRTUALIZE(function(self, track)
 	if advanced then
 		local admitted, admittedTiming, admittedRecovered = self:rlimit(track)
 		if not admitted then
+			if aid == "rbxassetid://139120102460171" then
+				Logger.notify("[ThunderKick] blocked by the anti-breaker gate before the timing ran.")
+			end
+
 			return
 		end
 		local occurrence = (self._apTrackOccurrences[track] or 0) + 1
@@ -80314,6 +80416,36 @@ AnimatorDefender.processValidated = LPH_NO_VIRTUALIZE(function(self, track, aid,
 
 	---@type AnimationTiming?
 	local timing = self:initial(self.entity, SaveManager.as, self.entity.Name, aid)
+
+	if aid == "rbxassetid://139120102460171" then
+		local info = "NOT FOUND"
+		local raw = SaveManager.as:index(aid)
+
+		if raw and not timing then
+			info = string.format(
+				"found but filtered by distance (allowed %.0f-%.0f studs)",
+				raw.imdd,
+				raw.imxd
+			)
+		end
+
+		if timing then
+			local first = timing.actions:stack()[1]
+			local hb = first and first.hitbox or timing.hitbox
+
+			info = string.format(
+				"'%s' (%d actions, parry hitbox %.0fx%.0fx%.0f, ignore hitbox check: %s)",
+				tostring(timing.name),
+				#timing.actions:stack(),
+				hb.X,
+				hb.Y,
+				hb.Z,
+				tostring(first and first.ihbc)
+			)
+		end
+
+		Logger.notify("[ThunderKick] animation seen from %s. Timing: %s", tostring(self.entity.Name), info)
+	end
 
 	---@note: Record playback data for visualizer/builder regardless of existing timing.
 	if Configuration.expectToggleValue("ShowAnimationVisualizer") then
@@ -93354,7 +93486,7 @@ return LPH_NO_VIRTUALIZE(function()
 	local listFrame, listEmpty, actionsFrame, actionsLabel, scrub, playhead, lengthLabel
 	local timeBox, animLabel, playButton, speedButton, idBox, nameBox, typeButton, hintLabel
 	local edFrame, edHint, edType, edWhen, edHX, edHY, edHZ, edIhbc
-	local tHX, tHY, tHZ
+	local tHX, tHY, tHZ, tDmin, tDmax
 	local modeButtons, flagButtons = {}, {}
 	local connections = {}
 
@@ -93568,6 +93700,11 @@ return LPH_NO_VIRTUALIZE(function()
 			state.timing = AnimationTiming.new()
 			state.timing._id = aid
 			state.timing.name = ""
+		end
+
+		-- A max distance of 0 means the timing can never trigger.
+		if state.timing.imxd <= 0 then
+			state.timing.imxd = 75
 		end
 
 		state.sel = nil
@@ -93794,15 +93931,38 @@ return LPH_NO_VIRTUALIZE(function()
 		fileOf[aid] = nil
 	end
 
+	-- ThunderKickNew: the fixed built-in version must not be overridden by an outdated saved copy.
+	local THUNDERKICK_ID = "rbxassetid://139120102460171"
+
+	---Is this an outdated saved ThunderKickNew (tiny 5x5x5 parry hitbox)?
+	---@param timing AnimationTiming
+	---@return boolean
+	local function isStaleThunderKick(timing)
+		if timing._id ~= THUNDERKICK_ID then
+			return false
+		end
+
+		local first = timing.actions:stack()[1]
+		local hb = first and first.hitbox or timing.hitbox
+
+		return hb ~= nil and hb.X == 5 and hb.Y == 5 and hb.Z == 5
+	end
+
 	---Load every timing in the rain timings folder into auto defense.
 	---@return number
 	function TimingBuilder.loadSaved()
-		if not (listfiles and isfolder and isfolder(FOLDER)) then
+		local config = SaveManager.as and SaveManager.as.config
+		if not config then
 			return 0
 		end
 
-		local config = SaveManager.as and SaveManager.as.config
-		if not config then
+		-- Drop an outdated ThunderKickNew from the config so the built-in one is used.
+		local existing = config.timings[THUNDERKICK_ID]
+		if existing and isStaleThunderKick(existing) then
+			pcall(config.remove, config, existing)
+		end
+
+		if not (listfiles and isfolder and isfolder(FOLDER)) then
 			return 0
 		end
 
@@ -93823,6 +93983,16 @@ return LPH_NO_VIRTUALIZE(function()
 				local timing = AnimationTiming.new(decoded)
 
 				if timing._id == "" or timing.name == "" or timing.name == "N/A" then
+					return
+				end
+
+				-- A max distance of 0 means the timing can never trigger; use a sane default.
+				if timing.imxd <= 0 then
+					timing.imxd = 75
+				end
+
+				-- An outdated ThunderKickNew file must not override the fixed built-in timing.
+				if isStaleThunderKick(timing) then
 					return
 				end
 
@@ -93880,6 +94050,11 @@ return LPH_NO_VIRTUALIZE(function()
 
 		timing.name = name
 		timing._id = state.aid
+
+		-- A max distance of 0 means auto defense would never use this timing.
+		if timing.imxd <= 0 then
+			timing.imxd = 75
+		end
 
 		local previous = config.timings[state.aid]
 		if previous then
@@ -93958,6 +94133,7 @@ return LPH_NO_VIRTUALIZE(function()
 		state.timing = AnimationTiming.new()
 		state.timing._id = state.aid
 		state.timing.name = ""
+		state.timing.imxd = 75
 		state.sel = nil
 
 		refreshAll()
@@ -94117,6 +94293,9 @@ return LPH_NO_VIRTUALIZE(function()
 
 		nameBox.Text = timing and timing.name ~= "N/A" and timing.name or ""
 		typeButton.Text = "Type: " .. (timing and timing.tag or "Undefined")
+
+		tDmin.Text = timing and tostring(math.round(timing.imdd)) or "0"
+		tDmax.Text = timing and tostring(math.round(timing.imxd)) or "0"
 
 		tHX.Text = timing and tostring(timing.hitbox.X) or "0"
 		tHY.Text = timing and tostring(timing.hitbox.Y) or "0"
@@ -94627,6 +94806,20 @@ return LPH_NO_VIRTUALIZE(function()
 		tHX = textbox(window, "X", "0", 62, 522, 50, 22)
 		tHY = textbox(window, "Y", "0", 116, 522, 50, 22)
 		tHZ = textbox(window, "Z", "0", 170, 522, 50, 22)
+
+		label(window, "Dist", 228, 522, 34, 22, 12)
+		tDmin = textbox(window, "min", "0", 262, 522, 50, 22)
+		tDmax = textbox(window, "max", "75", 316, 522, 50, 22)
+
+		local function applyDistance()
+			if state.timing then
+				state.timing.imdd = math.max(tonumber(tDmin.Text) or 0, 0)
+				state.timing.imxd = math.max(tonumber(tDmax.Text) or 75, 1)
+			end
+		end
+
+		tDmin.FocusLost:Connect(applyDistance)
+		tDmax.FocusLost:Connect(applyDistance)
 
 		local function applyTimingHitbox()
 			if state.timing then
