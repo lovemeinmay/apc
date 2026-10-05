@@ -3653,10 +3653,10 @@ return LPH_NO_VIRTUALIZE(function()
 		HudRegistry = {},
 
 		FontColor = Color3.fromRGB(255, 255, 255),
-		MainColor = Color3.fromRGB(15, 15, 16),
-		BackgroundColor = Color3.fromRGB(10, 10, 11),
-		AccentColor = Color3.fromRGB(0, 85, 255),
-		OutlineColor = Color3.fromRGB(38, 38, 40),
+		MainColor = Color3.fromRGB(22, 22, 28),
+		BackgroundColor = Color3.fromRGB(15, 15, 20),
+		AccentColor = Color3.fromRGB(255, 105, 180),
+		OutlineColor = Color3.fromRGB(46, 46, 58),
 		RiskColor = Color3.fromRGB(255, 50, 50),
 
 		Black = Color3.new(0, 0, 0),
@@ -3860,6 +3860,14 @@ return LPH_NO_VIRTUALIZE(function()
 		end
 
 		return _Instance
+	end
+
+	---Add rounded corners to an instance.
+	function Library:Round(Object, Radius)
+		return Library:Create("UICorner", {
+			CornerRadius = UDim.new(0, Radius or 6),
+			Parent = Object,
+		})
 	end
 
 	function Library:KeyBlacklists()
@@ -5632,6 +5640,22 @@ return LPH_NO_VIRTUALIZE(function()
 
 				Library:OnHighlight(Outer, Outer, { BorderColor3 = "AccentColor" }, { BorderColor3 = "Black" })
 
+				Library:Round(Outer, 6)
+				Library:Round(Inner, 6)
+
+				-- Pink flash when pressed.
+				Outer.InputBegan:Connect(function(Input)
+					if Input.UserInputType ~= Enum.UserInputType.MouseButton1 then
+						return
+					end
+
+					Inner.BackgroundColor3 = Library.MainColor:Lerp(Library.AccentColor, 0.45)
+
+					TweenService:Create(Inner, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+						BackgroundColor3 = Library.MainColor,
+					}):Play()
+				end)
+
 				return Outer, Inner, Label
 			end
 
@@ -5863,6 +5887,9 @@ return LPH_NO_VIRTUALIZE(function()
 				Parent = TextBoxInner,
 			})
 
+			Library:Round(TextBoxOuter, 6)
+			Library:Round(TextBoxInner, 6)
+
 			local Container = Library:Create("Frame", {
 				BackgroundTransparency = 1,
 				ClipsDescendants = true,
@@ -6059,6 +6086,9 @@ return LPH_NO_VIRTUALIZE(function()
 				BorderColor3 = "OutlineColor",
 			})
 
+			Library:Round(ToggleOuter, 4)
+			Library:Round(ToggleInner, 4)
+
 			local ToggleLabel = Library:CreateLabel({
 				Size = UDim2.new(0, 216, 1, 0),
 				Position = UDim2.new(1, 6, 0, 0),
@@ -6243,6 +6273,10 @@ return LPH_NO_VIRTUALIZE(function()
 				BackgroundColor3 = "MainColor",
 				BorderColor3 = "OutlineColor",
 			})
+
+			SliderInner.ClipsDescendants = true
+			Library:Round(SliderOuter, 6)
+			Library:Round(SliderInner, 6)
 
 			-- Track the real rendered width instead of a hardcoded pixel value, so the fill
 			-- actually reaches the edge regardless of groupbox/column width.
@@ -6560,6 +6594,9 @@ return LPH_NO_VIRTUALIZE(function()
 				Parent = DropdownInner,
 			})
 
+			Library:Round(DropdownOuter, 6)
+			Library:Round(DropdownInner, 6)
+
 			local DropdownArrow = Library:Create("ImageLabel", {
 				AnchorPoint = Vector2.new(0, 0.5),
 				BackgroundTransparency = 1,
@@ -6637,6 +6674,9 @@ return LPH_NO_VIRTUALIZE(function()
 				BackgroundColor3 = "MainColor",
 				BorderColor3 = "OutlineColor",
 			})
+
+			Library:Round(ListOuter, 6)
+			Library:Round(ListInner, 6)
 
 			local Scrolling = Library:Create("ScrollingFrame", {
 				BackgroundTransparency = 1,
@@ -7834,6 +7874,13 @@ return LPH_NO_VIRTUALIZE(function()
 			Parent = ScreenGui,
 		})
 
+		-- Opening animation controller: the whole window starts slightly smaller and
+		-- grows into place, giving the menu the same "reveal" feel as modern UI menus.
+		local WindowScale = Library:Create("UIScale", {
+			Scale = 0.82,
+			Parent = Outer,
+		})
+
 		Library:Create("UICorner", {
 			CornerRadius = UDim.new(0, 14),
 			Parent = Outer,
@@ -8217,7 +8264,7 @@ return LPH_NO_VIRTUALIZE(function()
 			end)
 		end
 
-		local SIDEBAR_WIDTH = 60
+		local SIDEBAR_WIDTH = 138
 
 		local MainSectionOuter = Library:Create("Frame", {
 			BackgroundColor3 = Library.BackgroundColor,
@@ -8317,6 +8364,9 @@ return LPH_NO_VIRTUALIZE(function()
 
 		Window.NextLayoutOrder = 0
 
+		-- Sidebar buttons are animated in sequence whenever the menu opens.
+		local SidebarTabs = {}
+
 		---Add a tab to the window.
 		---@param Name string
 		---@param Category string? # unused (no category headers are rendered)
@@ -8334,8 +8384,9 @@ return LPH_NO_VIRTUALIZE(function()
 
 			local TabButton = Library:Create("Frame", {
 				BackgroundColor3 = Library.MainColor,
+				BackgroundTransparency = 1,
 				BorderSizePixel = 0,
-				Size = UDim2.new(0, 40, 0, 40),
+				Size = UDim2.new(0, SIDEBAR_WIDTH - 20, 0, 40),
 				Position = UDim2.new(0, 10, 0, 0),
 				LayoutOrder = Window.NextLayoutOrder,
 				ZIndex = 2,
@@ -8356,7 +8407,7 @@ return LPH_NO_VIRTUALIZE(function()
 				TabButtonIcon = Library:Create("ImageLabel", {
 					AnchorPoint = Vector2.new(0.5, 0.5),
 					BackgroundTransparency = 1,
-					Position = UDim2.fromScale(0.5, 0.5),
+					Position = UDim2.new(0, 22, 0.5, 0),
 					Size = UDim2.fromOffset(26, 26),
 					Image = "rbxassetid://" .. Icon.Id,
 					ImageRectOffset = Icon.Offset,
@@ -8389,14 +8440,53 @@ return LPH_NO_VIRTUALIZE(function()
 				})
 			end
 
+			-- Show the tab's purpose next to its icon.
 			local TabButtonLabel = Library:CreateLabel({
-				Position = UDim2.new(0, 0, 0, 0),
-				Size = UDim2.new(0, 1, 0, 1),
-				Text = "",
-				Visible = false,
+				Position = UDim2.new(0, 46, 0, 0),
+				Size = UDim2.new(1, -52, 1, 0),
+				Text = Name,
+				TextSize = 13,
+				TextXAlignment = Enum.TextXAlignment.Left,
+				TextYAlignment = Enum.TextYAlignment.Center,
+				TextTruncate = Enum.TextTruncate.AtEnd,
+				TextTransparency = 1,
 				ZIndex = 3,
 				Parent = TabButton,
 			})
+
+			-- Keep the sidebar compact: the tab name is only revealed while hovering.
+			local HoverTweenInfo = TweenInfo.new(0.16, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+			TabButton.MouseEnter:Connect(function()
+				TweenService:Create(TabButtonLabel, HoverTweenInfo, {
+					TextTransparency = 0,
+				}):Play()
+
+				if TabButton.BackgroundTransparency == 1 then
+					TabButton.BackgroundColor3 = Library.FontColor
+					TweenService:Create(TabButton, HoverTweenInfo, { BackgroundTransparency = 0.93 }):Play()
+				end
+			end)
+
+			TabButton.MouseLeave:Connect(function()
+				TweenService:Create(TabButtonLabel, HoverTweenInfo, {
+					TextTransparency = 1,
+				}):Play()
+
+				if TabButton.BackgroundTransparency > 0.9 and TabButton.BackgroundTransparency < 1 then
+					TweenService:Create(TabButton, HoverTweenInfo, { BackgroundTransparency = 1 }):Play()
+				end
+			end)
+
+			Library:AddToRegistry(TabButtonLabel, {
+				TextColor3 = "FontColor",
+			})
+
+			SidebarTabs[#SidebarTabs + 1] = {
+				Button = TabButton,
+				Icon = TabButtonIcon,
+				Label = TabButtonLabel,
+				Order = Window.NextLayoutOrder,
+			}
 
 			local TabFrame = Library:Create("Frame", {
 				Name = "TabFrame",
@@ -8456,20 +8546,47 @@ return LPH_NO_VIRTUALIZE(function()
 				end)
 			end
 
+			local SELECTED_TEXT_COLOR = Color3.fromRGB(255, 105, 180)
+
+			-- Pink pill on the left edge of the selected tab.
+			local SelectedPill = Library:Create("Frame", {
+				AnchorPoint = Vector2.new(0, 0.5),
+				BackgroundColor3 = SELECTED_TEXT_COLOR,
+				BorderSizePixel = 0,
+				Position = UDim2.new(0, -6, 0.5, 0),
+				Size = UDim2.fromOffset(3, 22),
+				Visible = false,
+				ZIndex = 4,
+				Parent = TabButton,
+			})
+			Library:Round(SelectedPill, 2)
+
+			local TabIsShown = false
+
 			function Tab:ShowTab()
 				for _, Tab in next, Window.Tabs do
 					Tab:HideTab()
 				end
 
-				TabButton.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-				Library.RegistryMap[TabButton].Properties.BackgroundColor3 = function() return Color3.fromRGB(255, 255, 255) end
-				if TabButtonIcon then TabButtonIcon.ImageColor3 = Color3.fromRGB(10, 10, 11) end
+				TabIsShown = true
+
+				TabButton.BackgroundColor3 = SELECTED_TEXT_COLOR
+				TabButton.BackgroundTransparency = 0.86
+				Library.RegistryMap[TabButton].Properties.BackgroundColor3 = function() return SELECTED_TEXT_COLOR end
+				SelectedPill.Visible = true
+				TabButtonLabel.TextColor3 = SELECTED_TEXT_COLOR
+				if TabButtonIcon then TabButtonIcon.ImageColor3 = SELECTED_TEXT_COLOR end
 				TabFrame.Visible = true
 			end
 
 			function Tab:HideTab()
+				TabIsShown = false
+
 				TabButton.BackgroundColor3 = Library.MainColor
+				TabButton.BackgroundTransparency = 1
 				Library.RegistryMap[TabButton].Properties.BackgroundColor3 = "MainColor"
+				SelectedPill.Visible = false
+				TabButtonLabel.TextColor3 = Library.FontColor
 				if TabButtonIcon then TabButtonIcon.ImageColor3 = Library.FontColor end
 				TabFrame.Visible = false
 			end
@@ -8511,6 +8628,9 @@ return LPH_NO_VIRTUALIZE(function()
 					BackgroundColor3 = "BackgroundColor",
 				})
 
+				BoxInner.ClipsDescendants = true
+				Library:Round(BoxInner, 8)
+
 				local Highlight = Library:Create("Frame", {
 					BackgroundColor3 = Library.AccentColor,
 					BorderSizePixel = 0,
@@ -8519,13 +8639,24 @@ return LPH_NO_VIRTUALIZE(function()
 					Parent = BoxInner,
 				})
 
+				-- Accent line fades out to the right instead of a hard full-width bar.
+				Library:Create("UIGradient", {
+					Transparency = NumberSequence.new({
+						NumberSequenceKeypoint.new(0, 0),
+						NumberSequenceKeypoint.new(0.6, 0.35),
+						NumberSequenceKeypoint.new(1, 0.9),
+					}),
+					Parent = Highlight,
+				})
+
 				Library:AddToRegistry(Highlight, {
 					BackgroundColor3 = "AccentColor",
 				})
 
 				local GroupboxLabel = Library:CreateLabel({
 					Size = UDim2.new(1, 0, 0, 18),
-					Position = UDim2.new(0, 4, 0, 2),
+					Position = UDim2.new(0, 6, 0, 2),
+					FontFace = Font.fromEnum(Enum.Font.GothamBold),
 					TextSize = 14,
 					Text = Info.Name,
 					TextXAlignment = Enum.TextXAlignment.Left,
@@ -8828,13 +8959,62 @@ return LPH_NO_VIRTUALIZE(function()
 		local Fading = false
 		local FirstTime = false
 
+		local function animateSidebarButtons()
+			for index, entry in ipairs(SidebarTabs) do
+				local button = entry.Button
+				local icon = entry.Icon
+				local label = entry.Label
+
+				button.Position = UDim2.new(0, 10, 0, 0)
+				button.BackgroundTransparency = 1
+				if icon then
+					icon.ImageTransparency = 1
+				end
+				label.TextTransparency = 1
+
+				task.delay((index - 1) * 0.065, function()
+					if not Toggled or not button.Parent then
+						return
+					end
+
+					local tweenInfo = TweenInfo.new(
+						0.34,
+						Enum.EasingStyle.Quint,
+						Enum.EasingDirection.Out
+					)
+
+					if icon then
+						TweenService:Create(icon, tweenInfo, {
+							ImageTransparency = 0,
+						}):Play()
+					end
+
+				end)
+			end
+		end
+
+		local function animateWindowOpen()
+			-- Lightweight opening animation: scale only. Avoid rotation/position
+			-- tweens because they can cause UI ghosting/stutter in some executors.
+			WindowScale.Scale = 0.90
+
+			TweenService:Create(
+				WindowScale,
+				TweenInfo.new(0.30, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
+				{ Scale = 1 }
+			):Play()
+
+			-- Start the sidebar cascade just after the window begins expanding.
+			task.delay(0.04, animateSidebarButtons)
+		end
+
 		function Library:Toggle()
 			if Fading then
 				return
 			end
 
 			local FadeTime = Config.MenuFadeTime
-			local ShouldFade = FadeTime > 0.01
+			local ShouldFade = FadeTime > 0.01 and not Toggled
 
 			Fading = true
 
@@ -8843,6 +9023,7 @@ return LPH_NO_VIRTUALIZE(function()
 
 			if Toggled then
 				Outer.Visible = true
+				animateWindowOpen()
 			end
 
 			if not Toggled then
@@ -8905,6 +9086,14 @@ return LPH_NO_VIRTUALIZE(function()
 				task.wait(FadeTime)
 
 				FirstTime = true
+			end
+
+			if not Toggled then
+				WindowScale.Scale = 0.90
+				Outer.Rotation = 0
+				for _, entry in ipairs(SidebarTabs) do
+					entry.Button.Position = UDim2.new(0, -48, 0, 0)
+				end
 			end
 
 			Outer.Visible = Toggled
@@ -93187,7 +93376,7 @@ local renderStepped = Signal.new(runService.RenderStepped)
 local menuMaid = Maid.new()
 
 -- Constants.
-local MENU_TITLE = "RAIN | DEEPWOKEN"
+local MENU_TITLE = "CATBOY MEOW MEOW"
 
 if LRM_UserNote then
 	MENU_TITLE = string.format(
@@ -96734,7 +96923,7 @@ return LPH_NO_VIRTUALIZE(function()
 			["Default"] = {
 				1,
 				httpService:JSONDecode(
-					'{"FontColor":"ffffff","MainColor":"1c1c1c","AccentColor":"0055ff","BackgroundColor":"141414","OutlineColor":"323232"}'
+					'{"FontColor":"ffffff","MainColor":"16161c","AccentColor":"ff69b4","BackgroundColor":"0f0f14","OutlineColor":"2e2e3a"}'
 				),
 			},
 			["BBot"] = {
