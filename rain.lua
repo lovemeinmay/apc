@@ -97047,13 +97047,13 @@ __bundle_register("GUI/Icons", function(require, _LOADED, __bundle_register, __b
 ---Sidebar tab icons, sourced from the Lucide icon set (rbxassetid sheets bundled by Rayfield's icon pack).
 ---@note: Each entry is {Id = number, Offset = Vector2, Size = Vector2} for use with ImageRectOffset/ImageRectSize.
 return {
-	Combat = { Id = 16898787671, Offset = Vector2.new(514, 514), Size = Vector2.new(256, 256) }, -- swords
+	Combat = { Id = 16898731301, Offset = Vector2.new(514, 514), Size = Vector2.new(256, 256) }, -- paw-print
 	Visuals = { Id = 16898669897, Offset = Vector2.new(0, 0), Size = Vector2.new(256, 256) }, -- eye
-	Game = { Id = 16898672166, Offset = Vector2.new(257, 0), Size = Vector2.new(256, 256) }, -- gamepad
-	Auto = { Id = 16898617146, Offset = Vector2.new(0, 0), Size = Vector2.new(256, 256) }, -- calendar
-	Exploit = { Id = 16898734564, Offset = Vector2.new(0, 0), Size = Vector2.new(256, 256) }, -- shield-alert
-	Settings = { Id = 16898734421, Offset = Vector2.new(514, 0), Size = Vector2.new(256, 256) }, -- settings
-	Builder = { Id = 16898791187, Offset = Vector2.new(514, 257), Size = Vector2.new(256, 256) }, -- wrench
+	Game = { Id = 16898613353, Offset = Vector2.new(918, 710), Size = Vector2.new(48, 48) }, -- footprints
+	Auto = { Id = 16898613699, Offset = Vector2.new(404, 869), Size = Vector2.new(48, 48) }, -- refresh-cw
+	Exploit = { Id = 16898674825, Offset = Vector2.new(257, 0), Size = Vector2.new(256, 256) }, -- lock-open
+	Settings = { Id = 16898671684, Offset = Vector2.new(257, 0), Size = Vector2.new(256, 256) }, -- folder
+	Builder = { Id = 16898613869, Offset = Vector2.new(453, 918), Size = Vector2.new(48, 48) }, -- wand-sparkles
 }
 
 end)
