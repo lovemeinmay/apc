@@ -68015,7 +68015,113 @@ function SaveManager.init()
 	    	            imxd = -63.583333333333336,
 	    	            tag = "Mantra",
 	    	            STOP_TRYING_TO_DUMP_TIMINGS_LOL = "You can't unless you reverse Luraph or dynamically dump them <3"
-	    	        }
+	    	        },
+	    ["XHRKYYO^CN\016\005\005\029\024\024\019\019\026\018\029\029\024\018\027\024\019"] = {
+	    	            rpd = 0,
+	    	            hso = 0,
+	    	            rsc = false,
+	    	            ieae = false,
+	    	            iapf = false,
+	    	            actions = {
+	    	                {
+	    	                    _type = "zKXXS",
+	    	                    name = "zKXXS\010\027",
+	    	                    hitbox = {
+	    	                        X = -67.58333333333333,
+	    	                        Y = -67.91666666666667,
+	    	                        Z = -67.58333333333333
+	    	                    },
+	    	                    when = -45.66666666666667,
+	    	                    ihbc = false
+	    	                }
+	    	            },
+	    	            ndfb = false,
+	    	            nbfb = false,
+	    	            _id = "XHRKYYO^CN\016\005\005\029\024\024\019\019\026\018\029\029\024\018\027\024\019",
+	    	            mat = 2000,
+	    	            rpue = false,
+	    	            srpn = false,
+	    	            punishable = 0,
+	    	            name = "dO]fOMCEDaK^Kg\027",
+	    	            hitbox = {
+	    	                X = -67.58333333333333,
+	    	                Y = -67.91666666666667,
+	    	                Z = -67.58333333333333
+	    	            },
+	    	            fhb = true,
+	    	            imdd = -68.58333333333333,
+	    	            duih = false,
+	    	            rsd = 0,
+	    	            umoa = false,
+	    	            smod = "d\005k",
+	    	            uif = false,
+	    	            bfht = 0.3,
+	    	            ibi = false,
+	    	            pfh = false,
+	    	            dp = false,
+	    	            after = 0,
+	    	            rsaid = "",
+	    	            imb = false,
+	    	            pfht = 0.15,
+	    	            iae = false,
+	    	            phds = 0,
+	    	            ha = false,
+	    	            phd = false,
+	    	            rsaw = 4,
+	    	            smn = false,
+	    	            nvfb = false,
+	    	            aatk = false,
+	    	            imxd = -62.333333333333336,
+	    	            tag = "M1",
+	    	            STOP_TRYING_TO_DUMP_TIMINGS_LOL = "You can't unless you reverse Luraph or dynamically dump them <3"
+	    	        },
+	    ["XHRKYYO^CN\016\005\005\027\026\031\030\019\030\030\029\028\026\018\018\018\024\019"] = {
+	    	            rpd = 0,
+	    	            hso = 0,
+	    	            rsc = false,
+	    	            ieae = false,
+	    	            iapf = false,
+	    	            actions = {},
+	    	            ndfb = false,
+	    	            nbfb = false,
+	    	            _id = "XHRKYYO^CN\016\005\005\027\026\031\030\019\030\030\029\028\026\018\018\018\024\019",
+	    	            mat = 2000,
+	    	            rpue = false,
+	    	            srpn = false,
+	    	            punishable = 0,
+	    	            name = "dO]fOMCEDaK^K\024",
+	    	            hitbox = {
+	    	                X = -67.58333333333333,
+	    	                Y = -67.91666666666667,
+	    	                Z = -67.58333333333333
+	    	            },
+	    	            fhb = true,
+	    	            imdd = -68.58333333333333,
+	    	            duih = false,
+	    	            rsd = 0,
+	    	            umoa = false,
+	    	            smod = "d\005k",
+	    	            uif = false,
+	    	            bfht = 0.3,
+	    	            ibi = false,
+	    	            pfh = false,
+	    	            dp = false,
+	    	            after = 0,
+	    	            rsaid = "",
+	    	            imb = false,
+	    	            pfht = 0.15,
+	    	            iae = false,
+	    	            phds = 0,
+	    	            ha = false,
+	    	            phd = false,
+	    	            rsaw = 4,
+	    	            smn = false,
+	    	            nvfb = false,
+	    	            aatk = false,
+	    	            imxd = -62.333333333333336,
+	    	            tag = "M1",
+	    	            STOP_TRYING_TO_DUMP_TIMINGS_LOL = "You can't unless you reverse Luraph or dynamically dump them <3"
+	    	        },
 	}
 	)
 	internalEffectContainer:load(
@@ -80574,10 +80680,6 @@ AnimatorDefender.process = LPH_NO_VIRTUALIZE(function(self, track)
 	if advanced then
 		local admitted, admittedTiming, admittedRecovered = self:rlimit(track)
 		if not admitted then
-			if aid == "rbxassetid://139120102460171" then
-				Logger.notify("[ThunderKick] blocked by the anti-breaker gate before the timing ran.")
-			end
-
 			return
 		end
 		local occurrence = (self._apTrackOccurrences[track] or 0) + 1
@@ -80605,36 +80707,6 @@ AnimatorDefender.processValidated = LPH_NO_VIRTUALIZE(function(self, track, aid,
 
 	---@type AnimationTiming?
 	local timing = self:initial(self.entity, SaveManager.as, self.entity.Name, aid)
-
-	if aid == "rbxassetid://139120102460171" then
-		local info = "NOT FOUND"
-		local raw = SaveManager.as:index(aid)
-
-		if raw and not timing then
-			info = string.format(
-				"found but filtered by distance (allowed %.0f-%.0f studs)",
-				raw.imdd,
-				raw.imxd
-			)
-		end
-
-		if timing then
-			local first = timing.actions:stack()[1]
-			local hb = first and first.hitbox or timing.hitbox
-
-			info = string.format(
-				"'%s' (%d actions, parry hitbox %.0fx%.0fx%.0f, ignore hitbox check: %s)",
-				tostring(timing.name),
-				#timing.actions:stack(),
-				hb.X,
-				hb.Y,
-				hb.Z,
-				tostring(first and first.ihbc)
-			)
-		end
-
-		Logger.notify("[ThunderKick] animation seen from %s. Timing: %s", tostring(self.entity.Name), info)
-	end
 
 	---@note: Record playback data for visualizer/builder regardless of existing timing.
 	if Configuration.expectToggleValue("ShowAnimationVisualizer") then
@@ -94120,21 +94192,32 @@ return LPH_NO_VIRTUALIZE(function()
 		fileOf[aid] = nil
 	end
 
-	-- ThunderKickNew: the fixed built-in version must not be overridden by an outdated saved copy.
+	-- Built-in timings that must not be overridden by outdated saved copies (old JSON files / configs).
 	local THUNDERKICK_ID = "rbxassetid://139120102460171"
+	local NEWLEGION_ID = "rbxassetid://72299087728129"
 
-	---Is this an outdated saved ThunderKickNew (tiny 5x5x5 parry hitbox)?
+	---Is this an outdated saved copy of a fixed built-in timing?
 	---@param timing AnimationTiming
 	---@return boolean
-	local function isStaleThunderKick(timing)
-		if timing._id ~= THUNDERKICK_ID then
-			return false
-		end
-
+	local function isStaleBuiltin(timing)
 		local first = timing.actions:stack()[1]
 		local hb = first and first.hitbox or timing.hitbox
 
-		return hb ~= nil and hb.X == 5 and hb.Y == 5 and hb.Z == 5
+		if not hb or (first and first.ihbc) then
+			return false
+		end
+
+		-- ThunderKickNew: the old copy had a tiny 5x5x5 parry hitbox.
+		if timing._id == THUNDERKICK_ID then
+			return hb.X == 5 and hb.Y == 5 and hb.Z == 5
+		end
+
+		-- NewLegionKataM1: the old copy had a 0x0x0 parry hitbox, so the check could never pass.
+		if timing._id == NEWLEGION_ID then
+			return hb.X == 0 and hb.Y == 0 and hb.Z == 0
+		end
+
+		return false
 	end
 
 	---Load every timing in the rain timings folder into auto defense.
@@ -94145,10 +94228,13 @@ return LPH_NO_VIRTUALIZE(function()
 			return 0
 		end
 
-		-- Drop an outdated ThunderKickNew from the config so the built-in one is used.
-		local existing = config.timings[THUNDERKICK_ID]
-		if existing and isStaleThunderKick(existing) then
-			pcall(config.remove, config, existing)
+		-- Drop outdated copies from the config so the fixed built-in timings are used.
+		for _, builtinId in next, { THUNDERKICK_ID, NEWLEGION_ID } do
+			local existing = config.timings[builtinId]
+
+			if existing and isStaleBuiltin(existing) then
+				pcall(config.remove, config, existing)
+			end
 		end
 
 		if not (listfiles and isfolder and isfolder(FOLDER)) then
@@ -94180,8 +94266,8 @@ return LPH_NO_VIRTUALIZE(function()
 					timing.imxd = 75
 				end
 
-				-- An outdated ThunderKickNew file must not override the fixed built-in timing.
-				if isStaleThunderKick(timing) then
+				-- An outdated saved copy must not override the fixed built-in timing.
+				if isStaleBuiltin(timing) then
 					return
 				end
 
