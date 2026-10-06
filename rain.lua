@@ -80695,6 +80695,9 @@ AnimatorDefender.process = LPH_NO_VIRTUALIZE(function(self, track)
 			task.delay(0.2, function()
 				self.hits[id] = nil
 			end)
+
+			-- They were hit and stunned, so their attack will not land: stop the pending parry.
+			self:_cancelInterrupted("attacker was hit")
 		end)
 
 		return
@@ -80832,13 +80835,26 @@ AnimatorDefender.processValidated = LPH_NO_VIRTUALIZE(function(self, track, aid,
 	self._trackPlayedAt = ed and ed.t or tick()
 
 	self._trackStoppedAt = nil
-	local stoppedSignal = Signal.new(track.Stopped)
-	self.tmaid:add(stoppedSignal:connect("AnimatorDefender_TrackStopped", function()
-		self._trackStoppedAt = os.clock()
-	end))
 
 	self._trackSeq = self._trackSeq + 1
 	local mySeq = self._trackSeq
+
+	local playedClock = os.clock()
+	local expectedLength = track.Length / math.max(math.abs(track.Speed), 0.1)
+
+	local stoppedSignal = Signal.new(track.Stopped)
+	self.tmaid:add(stoppedSignal:connect("AnimatorDefender_TrackStopped", function()
+		self._trackStoppedAt = os.clock()
+
+		-- Attacker's swing was cut short (stunned / hit / parried): drop the parry that is still pending.
+		if self.track == track and self._trackSeq == mySeq and not track.Looped then
+			local elapsed = os.clock() - playedClock
+
+			if elapsed < expectedLength - 0.15 then
+				self:_cancelInterrupted("track stopped early")
+			end
+		end
+	end))
 
 	if timing.umoa then
 		return self:module(timing)
@@ -80893,6 +80909,23 @@ function AnimatorDefender:_cancelFeintedTrack(reason, expectedTrack)
 
 	QueuedBlocking.stop("Defender_Deflect")
 	QueuedBlocking.stop("Defender_BlockFallback")
+end
+
+---Cancel pending actions because the attacker was interrupted (you won the trade / they were stunned).
+---@param reason string
+function AnimatorDefender:_cancelInterrupted(reason)
+	local timing = self.timing
+
+	if not self.track or not timing or timing.tag == "Mantra" or timing.umoa or timing.rpue then
+		return
+	end
+
+	-- Nothing scheduled, nothing to cancel.
+	if next(self.tasks) == nil then
+		return
+	end
+
+	self:clean()
 end
 
 function AnimatorDefender:clean()
