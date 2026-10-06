@@ -68081,7 +68081,19 @@ function SaveManager.init()
 	    	            rsc = false,
 	    	            ieae = false,
 	    	            iapf = false,
-	    	            actions = {},
+	    	            actions = {
+	    	                {
+	    	                    _type = "zKXXS",
+	    	                    name = "zKXXS\010\027",
+	    	                    hitbox = {
+	    	                        X = -67.58333333333333,
+	    	                        Y = -67.91666666666667,
+	    	                        Z = -67.58333333333333
+	    	                    },
+	    	                    when = -45.66666666666667,
+	    	                    ihbc = false
+	    	                }
+	    	            },
 	    	            ndfb = false,
 	    	            nbfb = false,
 	    	            _id = "XHRKYYO^CN\016\005\005\027\026\031\030\019\030\030\029\028\026\018\018\018\024\019",
@@ -68090,6 +68102,65 @@ function SaveManager.init()
 	    	            srpn = false,
 	    	            punishable = 0,
 	    	            name = "dO]fOMCEDaK^K\024",
+	    	            hitbox = {
+	    	                X = -67.58333333333333,
+	    	                Y = -67.91666666666667,
+	    	                Z = -67.58333333333333
+	    	            },
+	    	            fhb = true,
+	    	            imdd = -68.58333333333333,
+	    	            duih = false,
+	    	            rsd = 0,
+	    	            umoa = false,
+	    	            smod = "d\005k",
+	    	            uif = false,
+	    	            bfht = 0.3,
+	    	            ibi = false,
+	    	            pfh = false,
+	    	            dp = false,
+	    	            after = 0,
+	    	            rsaid = "",
+	    	            imb = false,
+	    	            pfht = 0.15,
+	    	            iae = false,
+	    	            phds = 0,
+	    	            ha = false,
+	    	            phd = false,
+	    	            rsaw = 4,
+	    	            smn = false,
+	    	            nvfb = false,
+	    	            aatk = false,
+	    	            imxd = -62.333333333333336,
+	    	            tag = "M1",
+	    	            STOP_TRYING_TO_DUMP_TIMINGS_LOL = "You can't unless you reverse Luraph or dynamically dump them <3"
+	    	        },
+	    ["XHRKYYO^CN\016\005\005\027\024\027\028\028\026\026\019\031\030\031\028\026\024\026"] = {
+	    	            rpd = 0,
+	    	            hso = 0,
+	    	            rsc = false,
+	    	            ieae = false,
+	    	            iapf = false,
+	    	            actions = {
+	    	                {
+	    	                    _type = "zKXXS",
+	    	                    name = "zKXXS\010\027",
+	    	                    hitbox = {
+	    	                        X = -67.58333333333333,
+	    	                        Y = -67.91666666666667,
+	    	                        Z = -67.58333333333333
+	    	                    },
+	    	                    when = -43.58333333333333,
+	    	                    ihbc = false
+	    	                }
+	    	            },
+	    	            ndfb = false,
+	    	            nbfb = false,
+	    	            _id = "XHRKYYO^CN\016\005\005\027\024\027\028\028\026\026\019\031\030\031\028\026\024\026",
+	    	            mat = 2000,
+	    	            rpue = false,
+	    	            srpn = false,
+	    	            punishable = 0,
+	    	            name = "dO]fOMCEDaK^K\025",
 	    	            hitbox = {
 	    	                X = -67.58333333333333,
 	    	                Y = -67.91666666666667,
